@@ -1,0 +1,2409 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CTC SC — Ferramenta da Comissão Técnica de Classificação</title>
+<style>
+  :root {
+    /* Paleta extraida por inspecao direta do site oficial da SEJURI (sejuri.sc.gov.br)
+       em 16/09/2026: fundo branco predominante, wordmark "sc.gov.br" em vermelho + verde,
+       numeros/icones institucionais em verde, texto em cinza-escuro. Nao ha azul no
+       branding real do site (o unico azul encontrado numa varredura anterior era o botao
+       de um plugin de acessibilidade de terceiros, nao a marca da SEJURI) — por isso este
+       tema usa verde como cor de acao primaria e vermelho apenas como acento/alerta,
+       exatamente como no site oficial. */
+    --verde-institucional: #336633;
+    --verde-institucional-escuro: #244a24;
+    --verde-claro: #8fb13a;
+    --vermelho-sc: #c4000b;
+    --cinza-texto: #333333;
+    --cinza-secundario: #575757;
+    --cinza-claro: #e2e5e9;
+    --cinza-fundo: #f8fafc;
+    --cinza-fundo-alt: #eaedf2;
+    --branco: #ffffff;
+    --fonte-titulos: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --fonte-corpo: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --raio-padrao: 8px;
+    --sombra-card: 0 1px 3px rgba(15, 23, 42, 0.12), 0 1px 2px rgba(15, 23, 42, 0.08);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--fonte-corpo); color: var(--cinza-texto); background: var(--cinza-fundo); -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, h4 { font-family: var(--fonte-titulos); color: var(--cinza-texto); font-weight: 700; margin: 0 0 0.5rem; }
+  a { color: var(--verde-institucional); }
+  .topo { background: var(--branco); border-bottom: 1px solid var(--cinza-claro); color: var(--cinza-texto); padding: 0.75rem 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; }
+  .topo .marca { display: flex; align-items: center; gap: 0.15rem; font-family: var(--fonte-titulos); font-weight: 800; font-size: 1.3rem; }
+  .topo .marca .sigla-vermelha { color: var(--vermelho-sc); }
+  .topo .marca .sigla-verde { color: var(--verde-institucional); }
+  .topo nav { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .topo nav button { background: transparent; border: 1px solid var(--cinza-claro); color: var(--cinza-secundario); font-family: var(--fonte-corpo); font-size: 0.85rem; font-weight: 600; padding: 0.4rem 0.8rem; border-radius: 999px; cursor: pointer; }
+  .topo nav button:hover, .topo nav button.ativo { background: var(--verde-institucional); border-color: var(--verde-institucional); color: var(--branco); }
+  .faixa-titulo { background: var(--branco); border-bottom: 1px solid var(--cinza-claro); padding: 1rem 1.5rem; }
+  .faixa-titulo h1 { font-size: 1.3rem; }
+  .faixa-titulo .subtitulo { color: var(--cinza-secundario); font-size: 0.85rem; }
+  main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+  .card { background: var(--branco); border: 1px solid var(--cinza-claro); border-radius: var(--raio-padrao); box-shadow: var(--sombra-card); padding: 1.25rem; margin-bottom: 1rem; }
+  .card h2, .card h3 { font-size: 1.05rem; }
+  .grade { display: grid; gap: 1rem; }
+  .grade-2 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .grade-3 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .botao { display: inline-flex; align-items: center; gap: 0.4rem; font-family: var(--fonte-corpo); font-weight: 600; font-size: 0.9rem; padding: 0.55rem 1.1rem; border-radius: var(--raio-padrao); border: 1px solid transparent; cursor: pointer; }
+  .botao-primario { background: var(--verde-institucional); color: var(--branco); }
+  .botao-primario:hover { background: var(--verde-institucional-escuro); }
+  .botao-secundario { background: var(--branco); color: var(--verde-institucional); border-color: var(--verde-institucional); }
+  .botao-sucesso { background: var(--verde-institucional); color: var(--branco); }
+  .botao-perigo { background: var(--vermelho-sc); color: var(--branco); }
+  .botao-texto { background: transparent; color: var(--verde-institucional); padding: 0.3rem 0.5rem; border: none; text-decoration: underline; cursor: pointer; font-size: 0.85rem; }
+  label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--cinza-secundario); margin-bottom: 0.25rem; }
+  input, select, textarea { width: 100%; font-family: var(--fonte-corpo); font-size: 0.95rem; padding: 0.5rem 0.6rem; border: 1px solid #c6cad0; border-radius: 6px; background: var(--branco); margin-bottom: 0.9rem; }
+  textarea { min-height: 4.5rem; resize: vertical; }
+  .campo-checkbox { margin-bottom: 0.9rem; }
+  .campo-radio { margin-bottom: 0.9rem; }
+  .opcoes-radio { display: flex; flex-wrap: wrap; gap: 0.9rem; }
+  .rotulo-radio { display: flex; align-items: center; gap: 0.35rem; font-weight: 400; margin-bottom: 0; }
+  .rotulo-radio input[type="radio"] { width: auto; margin-bottom: 0; }
+  .tabela-pip { font-size: 0.85rem; }
+  .tabela-pip input, .tabela-pip textarea { margin-bottom: 0; font-size: 0.85rem; }
+  .tabela-pip td { vertical-align: top; }
+  .ficha-nota { font-size: 0.8rem; color: var(--cinza-secundario); font-style: italic; }
+  .cabecalho-recolhivel { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
+  .cabecalho-recolhivel h3 { margin-bottom: 0; }
+  .indicador-recolhivel { color: var(--verde-institucional); font-weight: 700; font-size: 1.1rem; margin-left: 0.75rem; flex-shrink: 0; }
+  .cartao-recolhivel .corpo-recolhivel { margin-top: 0.9rem; }
+  .cartao-recolhivel.recolhido .corpo-recolhivel { display: none; }
+  fieldset { border: 1px solid var(--cinza-claro); border-radius: var(--raio-padrao); padding: 1rem; margin-bottom: 1rem; }
+  fieldset legend { font-family: var(--fonte-titulos); font-weight: 700; color: var(--verde-institucional); padding: 0 0.4rem; }
+  .badge { display: inline-block; font-size: 0.72rem; font-weight: 700; padding: 0.2rem 0.55rem; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.02em; }
+  .badge-verde { background: #e4efe0; color: var(--verde-institucional); }
+  .badge-azul { background: #eaedf2; color: var(--cinza-secundario); }
+  .badge-vermelho { background: #fbe3e2; color: var(--vermelho-sc); }
+  .badge-cinza { background: var(--cinza-fundo-alt); color: var(--cinza-secundario); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th { text-align: left; font-family: var(--fonte-titulos); font-size: 0.72rem; text-transform: uppercase; color: var(--cinza-secundario); border-bottom: 2px solid var(--cinza-claro); padding: 0.55rem 0.5rem; }
+  td { padding: 0.55rem 0.5rem; border-bottom: 1px solid var(--cinza-claro); vertical-align: top; }
+  tr:hover td { background: var(--cinza-fundo); }
+  .painel-fases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+  .fase-coluna { background: var(--branco); border: 1px solid var(--cinza-claro); border-top: 4px solid var(--verde-institucional); border-radius: var(--raio-padrao); padding: 0.7rem; min-height: 160px; }
+  .fase-coluna h4 { font-size: 0.75rem; text-transform: uppercase; color: var(--verde-institucional); }
+  .fase-coluna-clicavel { cursor: pointer; }
+  .fase-coluna-clicavel:hover { box-shadow: var(--sombra-card); border-color: var(--verde-institucional); }
+  .fase-coluna-clicavel:hover h4 { text-decoration: underline; }
+  .filtro-fase-ativo { background: var(--cinza-fundo-alt); border-left: 3px solid var(--verde-institucional); border-radius: 6px; padding: 0.6rem 0.8rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+  .fase-item { background: var(--cinza-fundo); border-radius: 6px; padding: 0.45rem 0.55rem; margin-bottom: 0.45rem; font-size: 0.82rem; }
+  .fase-item.atrasada { border-left: 3px solid var(--vermelho-sc); background: #fdecec; }
+  @media (max-width: 900px) { .painel-fases { grid-template-columns: 1fr; } }
+  .texto-ajuda { font-size: 0.8rem; color: var(--cinza-secundario); }
+  .erro-mensagem { color: var(--vermelho-sc); font-size: 0.85rem; margin-bottom: 0.75rem; }
+  .ok-mensagem { color: var(--verde-institucional); font-size: 0.85rem; margin-bottom: 0.75rem; }
+  .selecionavel { cursor: pointer; }
+  .rodape { text-align: center; color: var(--cinza-secundario); font-size: 0.72rem; padding: 1.5rem; }
+  .aba { display: none; }
+  .aba.ativa { display: block; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+  .kpi { background: var(--branco); border: 1px solid var(--cinza-claro); border-radius: var(--raio-padrao); padding: 0.9rem; text-align: center; }
+  .kpi .numero { font-family: "Roboto", var(--fonte-titulos); font-size: 1.7rem; font-weight: 700; color: var(--verde-institucional); }
+  .kpi .rotulo { font-size: 0.75rem; color: var(--cinza-secundario); text-transform: uppercase; }
+  .tela-acesso { max-width: 460px; margin: 2.5rem auto; padding: 0 1rem; }
+  .tela-acesso .marca-grande { font-family: var(--fonte-titulos); font-weight: 800; font-size: 2rem; text-align: center; margin-bottom: 1rem; }
+  .tela-acesso .marca-grande .sigla-vermelha { color: var(--vermelho-sc); }
+  .tela-acesso .marca-grande .sigla-verde { color: var(--verde-institucional); }
+  .usuario-topo { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; font-size: 0.82rem; color: var(--cinza-secundario); }
+  .usuario-topo select { width: auto; max-width: 340px; margin-bottom: 0; padding: 0.3rem 0.45rem; font-size: 0.82rem; }
+  .aviso-atualizacao { background: #fff7e0; border-bottom: 1px solid #f0d68a; padding: 0.55rem 1.5rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .autoria { font-size: 0.75rem; color: var(--cinza-secundario); margin-bottom: 0.75rem; }
+  @media (max-width: 600px) { main { padding: 1rem; } .topo { padding: 0.75rem 1rem; } }
+  @media print {
+    .topo, .faixa-titulo nav, nav, .botao, .rodape, .sem-impressao, .aviso-atualizacao { display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div id="tela-acesso" class="tela-acesso"></div>
+
+<div id="area-app" style="display:none">
+  <div class="topo">
+    <div class="marca"><span class="sigla-vermelha">CTC</span><span class="sigla-verde">SC</span></div>
+    <nav id="nav-principal"></nav>
+    <div id="usuario-topo" class="usuario-topo"></div>
+  </div>
+  <div id="aviso-atualizacao" class="aviso-atualizacao" style="display:none"></div>
+  <main id="app"></main>
+</div>
+
+<div class="rodape">
+  CTC SC — ferramenta de apoio às Comissões Técnicas de Classificação do DPP-SC.
+  Baseada na Lei nº 7.210/1984 (arts. 5º a 9º) e na Nota Técnica nº 1/2026/GT-CTC/GABSEC/SENAPPEN/MJ.
+  Os dados ficam num banco central, com acesso por perfil e registro de quem alterou cada informação.
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import {
+  getAuth, connectAuthEmulator, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
+  onAuthStateChanged, sendPasswordResetEmail,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import {
+  getFirestore, connectFirestoreEmulator, doc, setDoc, updateDoc, deleteDoc, collection, query, where,
+  onSnapshot, serverTimestamp, writeBatch,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+/* =========================================================================
+   CTC SC — versao com banco central (Firebase: login + Firestore).
+   Todo o conteudo juridico/temas dos questionarios reproduz literalmente o
+   que consta na Nota Tecnica no 1/2026/GT-CTC/GABSEC/SENAPPEN/MJ (Processo
+   08016.029504/2025-19) e na Lei 7.210/1984 (LEP), arts. 5o a 9o. Onde a
+   norma remete a um anexo nao fornecido (Anexo III - formula de pontuacao
+   da Avaliacao de Conduta), esta ferramenta NAO calcula uma pontuacao
+   automatica - o nivel de acompanhamento e a prioridade de cada indice de
+   vulnerabilidade sao escolhas da propria equipe/CTC.
+   Identidade visual: cores e tipografia extraidas do site oficial da SEJURI
+   (sejuri.sc.gov.br) em 15/09/2026.
+   ========================================================================= */
+
+// ---------------------------------------------------------------------
+// Firebase (projeto ctc-sc)
+// ---------------------------------------------------------------------
+// A apiKey abaixo nao e segredo: identifica o projeto. Quem protege os dados sao as
+// regras do firestore.rules (login + perfil + unidade/regional).
+const firebaseConfig = {
+  apiKey: 'AIzaSyCQiZh6IoDRlP1uRsw9N5Dxg98FRyFTZdc',
+  authDomain: 'ctc-sc.firebaseapp.com',
+  projectId: 'ctc-sc',
+  storageBucket: 'ctc-sc.firebasestorage.app',
+  messagingSenderId: '629050090047',
+  appId: '1:629050090047:web:d186f1cd86544585698e8a'
+};
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
+// Aberto em localhost (testes): usa os emuladores do Firebase, nunca o banco real.
+const EM_TESTE = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+if (EM_TESTE) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+}
+
+// ---------------------------------------------------------------------
+// Camada de dados (Firestore)
+// ---------------------------------------------------------------------
+// Cada registro leva unidade + sr (definem quem le e grava, ver firestore.rules), rev
+// (controle de concorrencia: quem salva em cima de uma versao velha e recusado em vez
+// de apagar o trabalho do colega) e quem/quando criou e alterou. Toda gravacao cria
+// junto <colecao>/<id>/historico/<rev> com a copia do registro - trilha de auditoria
+// que ninguem edita nem apaga. Nada e apagado de fato: "remover" marca removido: true.
+const COLECOES = ['unidades', 'membrosCtc', 'pessoas', 'fases', 'fichas', 'pips', 'reclassificacoes'];
+const LISTA_DA_FICHA = {
+  servico_social: 'fichasServicoSocial', psicologia: 'fichasPsicologia',
+  saude: 'fichasSaude', policia_penal: 'fichasPoliciaPenal'
+};
+const CAMPOS_META = ['unidade', 'sr', 'rev', '_rev', 'createdBy', 'createdAt', 'updatedBy', 'updatedByNome', 'updatedAt'];
+
+let USUARIO = null;        // conta logada (Firebase Auth)
+let PERFIL = null;         // usuarios/{uid}: perfil, status, unidade, sr, cargo
+let UNIDADE_ATIVA = null;  // { nome, sr } - fixa para MEMBRO/DIR; escolhida no topo por SR/DPP (null = painel geral)
+const CACHE = {};
+COLECOES.forEach(function (c) { CACHE[c] = new Map(); });
+const CONTAS = new Map();  // usuarios/* no alcance de quem aprova contas (DIR/SR/DPP)
+let ESCUTAS = [];          // onSnapshot ativos (cancelados ao sair ou trocar de perfil)
+let ESCUTA_FICHAS = null;  // fichas: so da unidade ativa (sao os registros mais pesados)
+let COLECOES_CARREGADAS = new Set();
+let DADOS = dadosPadrao();
+
+function dadosPadrao() {
+  return {
+    unidade: { nome: '', tipoEstabelecimento: 'definitivo', regional: '', configurada: false },
+    unidadesReferencia: [],
+    membrosCtc: [],
+    pessoas: [],
+    fases: [],
+    fichasServicoSocial: [],
+    fichasPsicologia: [],
+    fichasSaude: [],
+    fichasPoliciaPenal: [],
+    pips: [],
+    reclassificacoes: []
+  };
+}
+
+function idUnidade(nome, sr) {
+  return sr + '_' + nome.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function milissegundos(ts) { return ts && ts.toMillis ? ts.toMillis() : Date.now(); }
+
+// Copia "de trabalho" de um registro para as telas: sem os campos de controle, mas com
+// _rev (a versao em que a tela se baseou), que gravarVarios usa para detectar conflito.
+function copiaParaTela(d) {
+  const c = JSON.parse(JSON.stringify(d));
+  CAMPOS_META.forEach(function (k) { delete c[k]; });
+  c._rev = d.rev || 0;
+  return c;
+}
+
+function daUnidadeAtiva(d) { return !!UNIDADE_ATIVA && d.unidade === UNIDADE_ATIVA.nome && d.sr === UNIDADE_ATIVA.sr; }
+
+function registrosDaUnidade(colecao) {
+  return Array.from(CACHE[colecao].values()).filter(daUnidadeAtiva)
+    .sort(function (a, b) { return milissegundos(a.createdAt) - milissegundos(b.createdAt); })
+    .map(copiaParaTela);
+}
+
+// Remonta DADOS (o formato que as telas usam desde a versao local) a partir do cache do
+// banco, so com a unidade ativa.
+function reconstruirDados() {
+  const novo = dadosPadrao();
+  if (UNIDADE_ATIVA) {
+    const reg = REGIONAIS_SC.find(function (r) { return r.sigla === UNIDADE_ATIVA.sr; });
+    const config = CACHE.unidades.get(idUnidade(UNIDADE_ATIVA.nome, UNIDADE_ATIVA.sr));
+    novo.unidade = {
+      nome: UNIDADE_ATIVA.nome, regional: reg ? reg.nome : UNIDADE_ATIVA.sr,
+      tipoEstabelecimento: config ? config.tipoEstabelecimento : 'definitivo', configurada: !!config
+    };
+    novo.membrosCtc = registrosDaUnidade('membrosCtc').filter(function (m) { return !m.removido; });
+    ['pessoas', 'fases', 'pips', 'reclassificacoes'].forEach(function (c) { novo[c] = registrosDaUnidade(c); });
+    registrosDaUnidade('fichas').forEach(function (f) {
+      const lista = LISTA_DA_FICHA[f.tipo];
+      if (lista) novo[lista].push(f);
+    });
+  }
+  DADOS = novo;
+}
+
+// Grava um ou mais registros num lote so (tudo ou nada), cada um com o seu historico.
+// itens: [{ colecao, registro, acao }] - registro.id e o id do documento.
+async function gravarVarios(itens) {
+  const lote = writeBatch(db);
+  itens.forEach(function (item) {
+    const anterior = CACHE[item.colecao].get(item.registro.id);
+    const base = item.registro._rev !== undefined ? item.registro._rev : (anterior ? anterior.rev || 0 : 0);
+    if ((anterior ? anterior.rev || 0 : 0) !== base) {
+      const erro = new Error('conflito'); erro.code = 'conflito'; throw erro;
+    }
+    const rev = base + 1;
+    const conteudo = JSON.parse(JSON.stringify(item.registro));
+    CAMPOS_META.forEach(function (k) { delete conteudo[k]; });
+    const meta = { rev: rev, updatedBy: USUARIO.uid, updatedByNome: PERFIL.nome || '', updatedAt: serverTimestamp() };
+    const ref = doc(db, item.colecao, item.registro.id);
+    if (anterior) {
+      // merge: preserva unidade, sr e createdBy/createdAt, que nao mudam depois de criados
+      lote.set(ref, Object.assign({}, conteudo, meta), { merge: true });
+    } else {
+      lote.set(ref, Object.assign({}, conteudo, meta, {
+        unidade: UNIDADE_ATIVA.nome, sr: UNIDADE_ATIVA.sr, createdBy: USUARIO.uid, createdAt: serverTimestamp()
+      }));
+    }
+    lote.set(doc(db, item.colecao, item.registro.id, 'historico', String(rev)), {
+      rev: rev, acao: item.acao, autor: USUARIO.uid, autorNome: PERFIL.nome || '', em: serverTimestamp(), dados: conteudo
+    });
+  });
+  await lote.commit();
+}
+
+function mensagemDeErroDoBanco(e) {
+  if (e && e.code === 'conflito') return 'Outra pessoa salvou este registro enquanto você editava. Clique em "Atualizar tela" (ou recarregue a página), confira o que mudou e salve de novo.';
+  if (e && e.code === 'permission-denied') return 'Não foi possível salvar: seu perfil não tem permissão para esta alteração, ou outra pessoa salvou este registro antes. Recarregue a página e tente de novo.';
+  if (e && e.code === 'unavailable') return 'Sem conexão com o servidor. Verifique a internet e tente de novo.';
+  return 'Não foi possível salvar: ' + (e && e.message ? e.message : e);
+}
+
+// Grava e avisa em caso de erro. Devolve true se gravou.
+async function salvarComAviso(itens) {
+  try {
+    await gravarVarios(itens);
+    reconstruirDados();
+    return true;
+  } catch (e) {
+    console.error(e);
+    reconstruirDados();
+    alert(mensagemDeErroDoBanco(e));
+    return false;
+  }
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// ---------------------------------------------------------------------
+// Regras de prazo (Nota Tecnica, item 4.3.6 e item 4.4.2.2.4)
+// ---------------------------------------------------------------------
+const PRAZO_PORTA_ENTRADA_HORAS = 72;
+const PRAZO_DEMAIS_DIAS = 60;
+const RECLASSIFICACAO_MINIMA_MESES = 6;
+const RECLASSIFICACAO_MAXIMA_MESES = 12;
+
+function somarHoras(data, horas) { const d = new Date(data); d.setHours(d.getHours() + horas); return d; }
+function somarDias(data, dias) { const d = new Date(data); d.setDate(d.getDate() + dias); return d; }
+function somarMeses(data, meses) { const d = new Date(data); d.setMonth(d.getMonth() + meses); return d; }
+function paraISODate(d) { return d.toISOString().slice(0, 10); }
+
+function calcularPrazoClassificacaoInicial(dataIngresso) {
+  const base = dataIngresso ? new Date(dataIngresso + 'T00:00:00') : new Date();
+  if (DADOS.unidade.tipoEstabelecimento === 'porta_entrada') {
+    return paraISODate(somarHoras(base, PRAZO_PORTA_ENTRADA_HORAS));
+  }
+  return paraISODate(somarDias(base, PRAZO_DEMAIS_DIAS));
+}
+
+function calcularDataReclassificacao(dataBase, meses) {
+  const m = Math.min(Math.max(Number(meses) || RECLASSIFICACAO_MAXIMA_MESES, RECLASSIFICACAO_MINIMA_MESES), RECLASSIFICACAO_MAXIMA_MESES);
+  return paraISODate(somarMeses(new Date(dataBase), m));
+}
+
+function formatarData(valor) {
+  if (!valor) return '—';
+  const d = new Date(valor + (valor.length === 10 ? 'T00:00:00' : ''));
+  if (isNaN(d.getTime())) return valor;
+  return d.toLocaleDateString('pt-BR');
+}
+
+function hojeISO() { return paraISODate(new Date()); }
+
+// ---------------------------------------------------------------------
+// Utilitarios de interface — sempre createElement + closures (nunca
+// onclick inline), para evitar problemas de aspas aninhadas.
+// ---------------------------------------------------------------------
+function el(tag, atributos, filhos) {
+  const elemento = document.createElement(tag);
+  const attrs = atributos || {};
+  Object.keys(attrs).forEach(function (chave) {
+    if (chave === 'class') elemento.className = attrs[chave];
+    else if (chave === 'texto') elemento.textContent = attrs[chave];
+    else if (chave.indexOf('on') === 0 && typeof attrs[chave] === 'function') elemento.addEventListener(chave.slice(2).toLowerCase(), attrs[chave]);
+    else elemento.setAttribute(chave, attrs[chave]);
+  });
+  (filhos || []).forEach(function (filho) {
+    if (filho === null || filho === undefined) return;
+    if (typeof filho === 'string') elemento.appendChild(document.createTextNode(filho));
+    else elemento.appendChild(filho);
+  });
+  return elemento;
+}
+
+function limpar(container) { while (container.firstChild) container.removeChild(container.firstChild); }
+
+function campoTexto(rotulo, opcoes) {
+  const op = opcoes || {};
+  const wrap = el('div', {});
+  wrap.appendChild(el('label', { texto: rotulo }));
+  const input = el(op.textarea ? 'textarea' : 'input', { type: op.tipo || 'text', placeholder: op.placeholder || '' });
+  if (op.valor) input.value = op.valor;
+  wrap.appendChild(input);
+  return { wrap: wrap, input: input };
+}
+
+function campoSelect(rotulo, opcoesLista, opcoes) {
+  const op = opcoes || {};
+  const wrap = el('div', {});
+  wrap.appendChild(el('label', { texto: rotulo }));
+  const select = el('select', {});
+  if (op.comBranco) select.appendChild(el('option', { value: '', texto: op.textoBranco || 'Selecione...' }));
+  opcoesLista.forEach(function (o) {
+    const opt = el('option', { value: o.valor, texto: o.rotulo });
+    if (op.valor === o.valor) opt.setAttribute('selected', 'selected');
+    select.appendChild(opt);
+  });
+  if (op.valor) select.value = op.valor;
+  wrap.appendChild(select);
+  return { wrap: wrap, select: select };
+}
+
+function campoCheckbox(rotulo, opcoes) {
+  const op = opcoes || {};
+  const wrap = el('div', { class: 'campo-checkbox' });
+  const input = el('input', { type: 'checkbox' });
+  input.style.width = 'auto';
+  input.style.display = 'inline-block';
+  input.style.marginBottom = '0';
+  if (op.aoMudar) input.addEventListener('change', op.aoMudar);
+  const label = el('label', {}, [input, ' ' + rotulo]);
+  label.style.display = 'flex';
+  label.style.alignItems = 'center';
+  label.style.gap = '0.4rem';
+  label.style.fontWeight = '400';
+  wrap.appendChild(label);
+  return { wrap: wrap, input: input };
+}
+
+let CONTADOR_RADIO = 0;
+function campoRadio(rotulo, opcoesLista, opcoes) {
+  const op = opcoes || {};
+  CONTADOR_RADIO += 1;
+  const nomeGrupo = 'radio-' + CONTADOR_RADIO;
+  const wrap = el('div', { class: 'campo-radio' });
+  wrap.appendChild(el('label', { texto: rotulo }));
+  const linha = el('div', { class: 'opcoes-radio' });
+  const inputs = opcoesLista.map(function (o) {
+    const input = el('input', { type: 'radio', name: nomeGrupo, value: o.valor });
+    if (op.valor === o.valor) input.checked = true;
+    linha.appendChild(el('label', { class: 'rotulo-radio' }, [input, ' ' + o.rotulo]));
+    return input;
+  });
+  wrap.appendChild(linha);
+  return {
+    wrap: wrap,
+    obterValor: function () { const m = inputs.find(function (i) { return i.checked; }); return m ? m.value : ''; },
+    definirValor: function (valor) { inputs.forEach(function (i) { i.checked = (i.value === valor); }); }
+  };
+}
+
+function botao(texto, classe, aoClicar) { return el('button', { class: 'botao ' + classe, type: 'button', texto: texto, onClick: aoClicar }); }
+function badge(texto, classe) { return el('span', { class: 'badge ' + classe, texto: texto }); }
+function cartao(filhos) { return el('div', { class: 'card' }, filhos); }
+
+// Cartao recolhivel: clicar no cabecalho (titulo) expande/recolhe o conteudo. Usado nas
+// Fichas 1-6 da pessoa, que sao formularios longos - permite ver so os titulos e abrir
+// so a ficha que se quer preencher/consultar no momento. Mirror de CtcUi.cartaoRecolhivel
+// no sistema completo (public/js/ui.js).
+function cartaoRecolhivel(titulo, filhos, opcoes) {
+  const op = opcoes || {};
+  const aberto = !!op.iniciarAberto;
+  const indicador = el('span', { class: 'indicador-recolhivel', texto: aberto ? '▾' : '▸' });
+  const cabecalho = el('div', { class: 'cabecalho-recolhivel' }, [
+    el('h3', { texto: titulo }),
+    indicador
+  ]);
+  const corpo = el('div', { class: 'corpo-recolhivel' }, filhos);
+  const cartaoEl = el('div', { class: 'card cartao-recolhivel' + (aberto ? '' : ' recolhido') }, [cabecalho, corpo]);
+  cabecalho.addEventListener('click', function () {
+    const recolhido = cartaoEl.classList.toggle('recolhido');
+    indicador.textContent = recolhido ? '▸' : '▾';
+  });
+  return cartaoEl;
+}
+function mensagemErro(texto) { return el('div', { class: 'erro-mensagem', texto: texto }); }
+function mensagemOk(texto) { return el('div', { class: 'ok-mensagem', texto: texto }); }
+
+function nomePessoa(id) {
+  const p = DADOS.pessoas.find(function (x) { return x.id === id; });
+  return p ? (p.nomeSocial || p.nome) : '—';
+}
+
+// ---------------------------------------------------------------------
+// Rotas / abas
+// ---------------------------------------------------------------------
+const ABAS = [
+  { chave: 'painel', rotulo: 'Painel' },
+  { chave: 'unidade', rotulo: 'Unidade e CTC' },
+  { chave: 'pessoas', rotulo: 'Pessoas' },
+  { chave: 'reclassificacoes', rotulo: 'Reclassificações' },
+  { chave: 'contas', rotulo: 'Contas', soGestor: true },
+  { chave: 'dados', rotulo: 'Exportar/Importar' }
+];
+// Abas que trabalham sobre uma unidade (SR/DPP precisam escolher uma no topo)
+const ABAS_DA_UNIDADE = ['unidade', 'pessoas', 'reclassificacoes', 'dados'];
+
+let ABA_ATUAL = 'painel';
+let PESSOA_SELECIONADA = null;
+// Fase escolhida ao clicar num cartao do Painel (ver renderizarPainel) - filtra a lista
+// de Pessoas para mostrar so quem esta atualmente nessa fase. Null = sem filtro.
+let FILTRO_FASE = null;
+
+function montarNavegacao() {
+  const nav = document.getElementById('nav-principal');
+  limpar(nav);
+  ABAS.filter(function (a) { return !a.soGestor || ehGestor(); }).forEach(function (a) {
+    const pendentes = a.chave === 'contas' ? contasPendentes() : 0;
+    const btn = el('button', {
+      texto: a.rotulo + (pendentes ? ' (' + pendentes + ')' : ''),
+      class: ABA_ATUAL === a.chave ? 'ativo' : '',
+      onClick: function () { PESSOA_SELECIONADA = null; FILTRO_FASE = null; irParaAba(a.chave); }
+    });
+    nav.appendChild(btn);
+  });
+}
+
+function irParaAba(chave) {
+  ABA_ATUAL = chave;
+  montarNavegacao();
+  renderizarApp();
+}
+
+function renderizarApp() {
+  const app = document.getElementById('app');
+  limpar(app);
+  esconderAvisoAtualizacao();
+  if (COLECOES_CARREGADAS.size < COLECOES.length) {
+    app.appendChild(el('p', { class: 'texto-ajuda', texto: 'Carregando dados...' }));
+    return;
+  }
+  if (!UNIDADE_ATIVA && ABAS_DA_UNIDADE.indexOf(ABA_ATUAL) !== -1) {
+    app.appendChild(cartao([
+      el('h3', { texto: 'Escolha uma unidade' }),
+      el('p', { class: 'texto-ajuda', texto: 'Use o seletor "Unidade" no topo da página para escolher em qual unidade trabalhar, ou abra o Painel para ver o resumo de todas.' })
+    ]));
+    return;
+  }
+  if (ABA_ATUAL === 'painel') renderizarPainel(app);
+  else if (ABA_ATUAL === 'contas') renderizarContas(app);
+  else if (ABA_ATUAL === 'unidade') renderizarUnidade(app);
+  else if (ABA_ATUAL === 'pessoas') {
+    if (PESSOA_SELECIONADA) renderizarDetalhePessoa(app, PESSOA_SELECIONADA);
+    else renderizarListaPessoas(app);
+  }
+  else if (ABA_ATUAL === 'reclassificacoes') renderizarReclassificacoes(app);
+  else if (ABA_ATUAL === 'dados') renderizarDados(app);
+}
+
+// ---------------------------------------------------------------------
+// Painel
+// ---------------------------------------------------------------------
+// Audiencia de Custodia e Ingresso no Equipamento Penal antecedem a atuacao da CTC e
+// nao tem ficha propria no instrumento fornecido pela usuaria (CTC_SC_Fichas_Unificadas.docx,
+// que comeca direto no Modulo I) - por isso nao sao mais rastreadas como fases do sistema,
+// a pedido da usuaria. Ver a funcao de registro de pessoa, abaixo, e legal/referencias.md.
+const ROTULOS_FASE = {
+  classificacao_singularizacao: 'Classificação e Singularização',
+  preparacao_saida: 'Preparação para Saída',
+  soltura: 'Soltura'
+};
+const ORDEM_FASES = ['classificacao_singularizacao', 'preparacao_saida', 'soltura'];
+
+function renderizarPainel(container) {
+  if (!UNIDADE_ATIVA) { renderizarPainelGeral(container); return; }
+  if (ehRegionalOuDPP()) {
+    container.appendChild(el('button', { class: 'botao-texto', texto: '← Voltar ao painel geral', onClick: function () { escolherUnidade(null); } }));
+  }
+  container.appendChild(el('h2', { texto: DADOS.unidade.nome }));
+  const pessoasAtivas = DADOS.pessoas.filter(function (p) { return p.situacao === 'ativo'; });
+  const fasesAbertas = DADOS.fases.filter(function (f) { return !f.dataConclusao; });
+  const atrasadas = fasesAbertas.filter(function (f) { return f.dataPrazo && f.dataPrazo < hojeISO(); });
+  const reclassPendentes = DADOS.reclassificacoes.filter(function (r) { return r.status !== 'realizada'; });
+
+  const kpis = el('div', { class: 'kpis' }, [
+    kpi(pessoasAtivas.length, 'Pessoas ativas'),
+    kpi(DADOS.pips.length, 'CTCs feitos nesta unidade'),
+    kpi(fasesAbertas.length, 'Fases em andamento'),
+    kpi(atrasadas.length, 'Prazos vencidos'),
+    kpi(reclassPendentes.length, 'Reclassificações pendentes')
+  ]);
+  container.appendChild(kpis);
+  container.appendChild(el('p', {
+    class: 'texto-ajuda',
+    texto: '"CTC feito" = Plano Individualizador da Pena (PIP) elaborado pela Comissão após os Módulos I e II (art. 6º da LEP; item 4.4.2.2.3 da Nota Técnica). A SR vê o total da regional e o DPP o do estado, no painel geral.'
+  }));
+
+  container.appendChild(el('h2', { texto: 'Fluxo de gestão penal' }));
+  container.appendChild(el('p', {
+    class: 'texto-ajuda',
+    texto: 'Classificação inicial: até 72h em unidade porta de entrada, até 60 dias nos demais estabelecimentos (Nota Técnica, item 4.3.6). Itens em vermelho estão com prazo vencido.'
+  }));
+
+  const painel = el('div', { class: 'painel-fases' });
+  ORDEM_FASES.forEach(function (chaveFase) {
+    const quantidadeNaFase = fasesAbertas.filter(function (f) { return f.fase === chaveFase; }).length;
+    // O titulo da coluna e clicavel: leva para a lista de Pessoas ja filtrada por essa fase.
+    // O clique num item especifico (pessoa) dentro da coluna continua abrindo direto a pessoa
+    // (stopPropagation evita que o clique no item tambem dispare o filtro da coluna).
+    const cabecalhoColuna = el('h4', {
+      texto: ROTULOS_FASE[chaveFase] + (quantidadeNaFase ? ' (' + quantidadeNaFase + ')' : ''),
+      title: 'Ver pessoas nesta fase'
+    });
+    const coluna = el('div', {
+      class: 'fase-coluna fase-coluna-clicavel',
+      onClick: function () { FILTRO_FASE = chaveFase; irParaAba('pessoas'); }
+    }, [cabecalhoColuna]);
+    fasesAbertas.filter(function (f) { return f.fase === chaveFase; }).forEach(function (f) {
+      const atrasada = f.dataPrazo && f.dataPrazo < hojeISO();
+      coluna.appendChild(el('div', {
+        class: 'fase-item' + (atrasada ? ' atrasada' : ''),
+        onClick: function (ev) { ev.stopPropagation(); PESSOA_SELECIONADA = f.pplId; irParaAba('pessoas'); }
+      }, [
+        el('strong', { texto: nomePessoa(f.pplId) }),
+        el('div', { class: 'texto-ajuda', texto: f.dataPrazo ? 'Prazo: ' + formatarData(f.dataPrazo) : 'Sem prazo definido' })
+      ]));
+    });
+    painel.appendChild(coluna);
+  });
+  container.appendChild(painel);
+
+  if (!DADOS.unidade.configurada) {
+    container.appendChild(cartao([
+      el('h3', { texto: 'Informe o tipo de estabelecimento' }),
+      el('p', { class: 'texto-ajuda', texto: 'Na aba "Unidade e CTC", o(a) diretor(a), a SR ou o DPP informam se a unidade é porta de entrada ou estabelecimento definitivo — isso define o prazo de classificação inicial (72h ou 60 dias). Enquanto isso, vale o prazo de 60 dias.' }),
+      botao('Ir para Unidade e CTC', 'botao-primario', function () { irParaAba('unidade'); })
+    ]));
+  }
+}
+
+function kpi(numero, rotulo) {
+  return el('div', { class: 'kpi' }, [el('div', { class: 'numero', texto: String(numero) }), el('div', { class: 'rotulo', texto: rotulo })]);
+}
+
+// Painel geral da SR (sua regional) ou do DPP (estado todo): soma por unidade, a partir
+// dos registros que o perfil pode ler.
+function renderizarPainelGeral(container) {
+  container.appendChild(el('h2', { texto: PERFIL.perfil === 'DPP' ? 'Painel estadual' : 'Painel da regional ' + PERFIL.sr }));
+  const hoje = hojeISO();
+  const porUnidade = new Map();
+  function linha(d) {
+    const chave = d.sr + '|' + d.unidade;
+    if (!porUnidade.has(chave)) porUnidade.set(chave, { nome: d.unidade, sr: d.sr, pessoas: 0, pips: 0, fases: 0, atrasadas: 0, reclass: 0 });
+    return porUnidade.get(chave);
+  }
+  CACHE.pessoas.forEach(function (p) { if (p.situacao === 'ativo') linha(p).pessoas += 1; });
+  CACHE.pips.forEach(function (p) { linha(p).pips += 1; });
+  CACHE.fases.forEach(function (f) {
+    if (f.dataConclusao) return;
+    const l = linha(f);
+    l.fases += 1;
+    if (f.dataPrazo && f.dataPrazo < hoje) l.atrasadas += 1;
+  });
+  CACHE.reclassificacoes.forEach(function (r) { if (r.status !== 'realizada') linha(r).reclass += 1; });
+
+  const linhas = Array.from(porUnidade.values()).sort(function (a, b) {
+    return a.sr === b.sr ? a.nome.localeCompare(b.nome, 'pt-BR') : (a.sr < b.sr ? -1 : 1);
+  });
+  const total = linhas.reduce(function (t, l) {
+    ['pessoas', 'pips', 'fases', 'atrasadas', 'reclass'].forEach(function (k) { t[k] += l[k]; });
+    return t;
+  }, { pessoas: 0, pips: 0, fases: 0, atrasadas: 0, reclass: 0 });
+
+  container.appendChild(el('div', { class: 'kpis' }, [
+    kpi(total.pessoas, 'Pessoas ativas'),
+    kpi(total.pips, 'CTCs feitos'),
+    kpi(total.fases, 'Fases em andamento'),
+    kpi(total.atrasadas, 'Prazos vencidos'),
+    kpi(total.reclass, 'Reclassificações pendentes')
+  ]));
+
+  if (!linhas.length) {
+    container.appendChild(el('p', { class: 'texto-ajuda', texto: 'Nenhuma unidade registrou dados ainda. Para trabalhar numa unidade, escolha-a no seletor "Unidade" no topo.' }));
+    return;
+  }
+  const tabela = el('table', {}, [
+    el('thead', {}, [el('tr', {}, [
+      el('th', { texto: 'Unidade' }), el('th', { texto: 'SR' }), el('th', { texto: 'Pessoas ativas' }), el('th', { texto: 'CTCs feitos' }),
+      el('th', { texto: 'Fases em andamento' }), el('th', { texto: 'Prazos vencidos' }), el('th', { texto: 'Reclass. pendentes' })
+    ])]),
+    el('tbody', {}, linhas.map(function (l) {
+      return el('tr', { class: 'selecionavel', title: 'Abrir esta unidade', onClick: function () { escolherUnidade({ nome: l.nome, sr: l.sr }); } }, [
+        el('td', {}, [el('a', { href: '#', texto: l.nome, onClick: function (ev) { ev.preventDefault(); } })]),
+        el('td', { texto: l.sr }), el('td', { texto: String(l.pessoas) }), el('td', { texto: String(l.pips) }),
+        el('td', { texto: String(l.fases) }),
+        el('td', {}, [l.atrasadas ? badge(String(l.atrasadas), 'badge-vermelho') : '0']),
+        el('td', { texto: String(l.reclass) })
+      ]);
+    }))
+  ]);
+  container.appendChild(cartao([tabela, el('p', { class: 'texto-ajuda', texto: 'Clique numa unidade para abrir os dados dela.' })]));
+}
+
+// ---------------------------------------------------------------------
+// Unidade e composição da CTC (art. 7o da LEP)
+// ---------------------------------------------------------------------
+const CARGOS = [
+  { valor: 'diretor', rotulo: 'Diretor(a) da unidade' },
+  { valor: 'chefe_de_servico', rotulo: 'Chefe de serviço' },
+  { valor: 'psiquiatra', rotulo: 'Psiquiatra' },
+  { valor: 'psicologo', rotulo: 'Psicólogo(a)' },
+  { valor: 'assistente_social', rotulo: 'Assistente social' },
+  { valor: 'profissional_saude', rotulo: 'Profissional de saúde' },
+  { valor: 'policial_penal', rotulo: 'Policial penal' },
+  { valor: 'outra_area_tecnica', rotulo: 'Outra área técnica' }
+];
+// Cargos de quem pede conta de Membro da CTC (o diretor(a) pede o perfil "Diretor(a)").
+const CARGOS_CONTA = CARGOS.filter(function (c) { return c.valor !== 'diretor'; });
+
+// Cada area tecnica edita so a propria ficha (Fichas 1-4); SR e DPP editam todas.
+// Mesma tabela do firestore.rules (fichaDoCargo).
+const FICHA_DO_CARGO = {
+  assistente_social: 'servico_social', psicologo: 'psicologia',
+  psiquiatra: 'saude', profissional_saude: 'saude', policial_penal: 'policia_penal'
+};
+const ROTULOS_PERFIL = { MEMBRO: 'Membro da CTC', DIR: 'Diretor(a) — presidente da CTC', SR: 'Superintendência Regional', DPP: 'DPP' };
+
+function ehGestor() { return !!PERFIL && ['DIR', 'SR', 'DPP'].indexOf(PERFIL.perfil) !== -1; }
+function ehRegionalOuDPP() { return !!PERFIL && (PERFIL.perfil === 'SR' || PERFIL.perfil === 'DPP'); }
+function podeEditarFicha(tipo) {
+  return ehRegionalOuDPP() || (!!PERFIL && PERFIL.perfil === 'MEMBRO' && FICHA_DO_CARGO[PERFIL.cargo] === tipo);
+}
+function areasQueEditamFicha(tipo) {
+  return CARGOS.filter(function (c) { return FICHA_DO_CARGO[c.valor] === tipo; }).map(function (c) { return c.rotulo.toLowerCase(); }).join(' ou ');
+}
+function desabilitarCampos(raiz) {
+  raiz.querySelectorAll('input, textarea, select').forEach(function (i) { i.disabled = true; });
+}
+// "Última alteração: Fulana, 22/10/2026 14:03" a partir do registro no cache
+function textoAutoria(colecao, id) {
+  const d = CACHE[colecao].get(id);
+  if (!d || !d.updatedAt || !d.updatedAt.toDate) return '';
+  return 'Última alteração: ' + (d.updatedByNome || '—') + ', ' + d.updatedAt.toDate().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function rotuloCargo(valor) {
+  const item = CARGOS.find(function (c) { return c.valor === valor; });
+  return item ? item.rotulo : valor;
+}
+
+// Lista oficial de estabelecimentos penais por Superintendencia Regional, transcrita do
+// site da SEJURI/SC (sejuri.sc.gov.br > Departamento de Policia Penal > Estabelecimento
+// Penal / Unidade Policial Penal), consultado em 20/10/2026. Nomes copiados exatamente
+// como aparecem no site. Se uma unidade mudar de nome ou for criada, use a opcao
+// "Minha unidade nao esta na lista" - ela fica salva como unidade personalizada.
+const REGIONAIS_SC = [
+  { sigla: 'SR01', nome: 'SR01 - Superintendência Regional da Grande Florianópolis', unidades: [
+    'Colônia Agroindustrial de Palhoça', 'Complexo Penitenciário do Estado', 'Hospital de Custódia e Tratamento Psiquiátrico – HCTP',
+    'Penitenciária de Florianópolis', 'Presídio Feminino Regional de Florianópolis', 'Presídio Masculino Regional de Florianópolis',
+    'Presídio Regional de Biguaçu', 'Presídio Regional de Tijucas', 'Unidade de Monitoramento Eletrônico'
+  ]},
+  { sigla: 'SR02', nome: 'SR02 - Superintendência Regional Sul', unidades: [
+    'Penitenciária Feminina de Criciúma', 'Penitenciária Masculina de Tubarão', 'Penitenciária Sul', 'Presídio Regional de Araranguá',
+    'Presídio Regional de Criciúma', 'Presídio Regional de Imbituba', 'Presídio Regional de Laguna', 'Presídio Regional de Tubarão'
+  ]},
+  { sigla: 'SR03', nome: 'SR03 - Superintendência Regional do Norte', unidades: [
+    'Penitenciária Industrial de Joinville', 'Presídio Feminino Regional de Joinville', 'Presídio Regional de Barra Velha',
+    'Presídio Regional de Joinville', 'Presídio Regional de São Francisco do Sul'
+  ]},
+  { sigla: 'SR04', nome: 'SR04 - Superintendência Regional do Vale do Itajaí', unidades: [
+    'Penitenciária de Itajaí', 'Presídio Feminino Regional de Itajaí', 'Presídio Regional de Brusque', 'Presídio Regional de Itajaí',
+    'Presídio Regional de Itapema'
+  ]},
+  { sigla: 'SR05', nome: 'SR05 - Superintendência Regional Serrana', unidades: [
+    'Penitenciária Industrial de São Cristóvão do Sul', 'Penitenciária Regional de Curitibanos', 'Presídio Masculino de Lages',
+    'Presídio Regional de Caçador', 'Presídio Regional de Campos Novos', 'Presídio Regional de Lages', 'Presídio Regional de Videira',
+    'Unidade de Segurança Máxima de São Cristóvão do Sul'
+  ]},
+  { sigla: 'SR06', nome: 'SR06 - Superintendência Regional Oeste', unidades: [
+    'Penitenciária Agrícola de Chapecó', 'Penitenciária Industrial de Chapecó', 'Presídio Feminino Regional de Chapecó',
+    'Presídio Regional de Chapecó', 'Presídio Regional de Concórdia', 'Presídio Regional de Joaçaba', 'Presídio Regional de Maravilha',
+    'Presídio Regional de São José do Cedro', 'Presídio Regional de São Miguel do Oeste', 'Presídio Regional de Xanxerê'
+  ]},
+  { sigla: 'SR07', nome: 'SR07 - Superintendência Regional do Médio Vale do Itajaí', unidades: [
+    'Penitenciária Industrial de Blumenau', 'Presídio Regional de Blumenau', 'Presídio Regional de Indaial',
+    'Presídio Regional de Ituporanga', 'Presídio Regional de Rio do Sul'
+  ]},
+  { sigla: 'SR08', nome: 'SR08 - Superintendência Regional do Planalto Norte', unidades: [
+    'Penitenciária Industrial de São Bento do Sul', 'Presídio Regional de Canoinhas', 'Presídio Regional de Jaraguá do Sul',
+    'Presídio Regional de Mafra', 'Presídio Regional de Porto União'
+  ]}
+];
+const OPCAO_OUTRA_UNIDADE = '__outra__';
+
+// Unidades da regional: lista oficial + unidades personalizadas que a usuaria tenha
+// cadastrado (DADOS.unidadesReferencia, mantido por compatibilidade com backups antigos).
+function unidadesDaRegional(siglaOuNome) {
+  const reg = REGIONAIS_SC.find(function (r) { return r.sigla === siglaOuNome || r.nome === siglaOuNome; });
+  const oficiais = reg ? reg.unidades.slice() : [];
+  const extras = DADOS.unidadesReferencia
+    .filter(function (u) { return reg && (u.regional === reg.nome || u.regional === reg.sigla || u.regional.indexOf(reg.sigla) === 0); })
+    .map(function (u) { return u.nome; })
+    .filter(function (n) { return oficiais.indexOf(n) === -1; });
+  return oficiais.concat(extras).sort(function (a, b) { return a.localeCompare(b, 'pt-BR'); });
+}
+
+function siglaDaRegionalSalva(valor) {
+  if (!valor) return '';
+  const reg = REGIONAIS_SC.find(function (r) { return r.nome === valor || r.sigla === valor || valor.indexOf(r.sigla) === 0; });
+  return reg ? reg.sigla : '';
+}
+
+function renderizarUnidade(container) {
+  container.appendChild(el('h2', { texto: 'Sua unidade' }));
+
+  const areaOk = el('div', {});
+  const podeEditar = ehGestor();
+  const tipo = campoRadio('Tipo de estabelecimento (define o prazo da classificação inicial)', [
+    { valor: 'porta_entrada', rotulo: 'Porta de entrada — até 72 horas' },
+    { valor: 'definitivo', rotulo: 'Estabelecimento definitivo — até 60 dias' },
+    { valor: 'ambos', rotulo: 'Ambos' }
+  ], { valor: DADOS.unidade.tipoEstabelecimento });
+  if (!podeEditar) desabilitarCampos(tipo.wrap);
+  const idConfig = idUnidade(UNIDADE_ATIVA.nome, UNIDADE_ATIVA.sr);
+
+  const formUnidade = el('form', {
+    class: 'card',
+    onSubmit: async function (ev) {
+      ev.preventDefault();
+      limpar(areaOk);
+      const anterior = CACHE.unidades.get(idConfig);
+      const ok = await salvarComAviso([{
+        colecao: 'unidades', acao: 'alterou tipo de estabelecimento',
+        registro: { id: idConfig, nome: UNIDADE_ATIVA.nome, tipoEstabelecimento: tipo.obterValor() || 'definitivo', _rev: anterior ? anterior.rev : 0 }
+      }]);
+      if (ok) areaOk.appendChild(mensagemOk('Unidade salva.'));
+    }
+  }, [
+    el('p', {}, [el('strong', { texto: DADOS.unidade.nome }), ' — ' + DADOS.unidade.regional]),
+    el('p', { class: 'texto-ajuda', texto: PERFIL.perfil === 'MEMBRO' || PERFIL.perfil === 'DIR' ? 'A unidade vem do seu cadastro. Se estiver errada, peça a correção ao DPP.' : 'Unidade escolhida no seletor do topo.' }),
+    tipo.wrap,
+    el('div', { class: 'autoria', texto: textoAutoria('unidades', idConfig) }),
+    areaOk,
+    podeEditar
+      ? el('button', { class: 'botao botao-primario', type: 'submit', texto: 'Salvar unidade' })
+      : el('p', { class: 'texto-ajuda', texto: 'Só o(a) diretor(a), a SR ou o DPP alteram o tipo de estabelecimento.' })
+  ]);
+  container.appendChild(formUnidade);
+
+  container.appendChild(el('h2', { texto: 'Composição da Comissão Técnica de Classificação' }));
+  container.appendChild(el('p', {
+    class: 'texto-ajuda',
+    texto: 'Art. 7º da LEP: presidida pelo diretor, com no mínimo dois chefes de serviço, um psiquiatra, um psicólogo e um assistente social quando se tratar de pena privativa de liberdade. A ausência do psiquiatra não invalida o ato (STJ, REsp 619.950/RS, Rel. Min. Laurita Vaz, DJ 29/11/2004).'
+  }));
+
+  const tabela = el('table', {}, [
+    el('thead', {}, [el('tr', {}, [el('th', { texto: 'Nome' }), el('th', { texto: 'Cargo' }), el('th', { texto: 'Portaria' }), el('th', { texto: '' })])]),
+    el('tbody', {})
+  ]);
+  const corpo = tabela.querySelector('tbody');
+
+  function recarregarMembros() {
+    limpar(corpo);
+    DADOS.membrosCtc.forEach(function (m) {
+      const celulaPortaria = m.portariaPendente
+        ? el('td', {}, [badge('Portaria pendente', 'badge-vermelho')])
+        : el('td', { texto: m.portaria || '—' });
+      corpo.appendChild(el('tr', {}, [
+        el('td', { texto: m.nome }), el('td', { texto: rotuloCargo(m.cargo) }), celulaPortaria,
+        el('td', {}, podeEditar ? [botao('Remover', 'botao-texto', async function () {
+          if (!window.confirm('Remover ' + m.nome + ' da composição da CTC? O registro fica guardado no histórico.')) return;
+          const ok = await salvarComAviso([{ colecao: 'membrosCtc', acao: 'removeu membro', registro: Object.assign({}, m, { removido: true }) }]);
+          if (ok) recarregarMembros();
+        })] : [])
+      ]));
+    });
+  }
+  recarregarMembros();
+
+  const nomeMembro = campoTexto('Nome');
+  const cargoMembro = campoSelect('Cargo', CARGOS, { comBranco: true });
+  const portariaMembro = campoTexto('Portaria de designação (nº/ano)');
+  const pendenteMembro = campoCheckbox('Designação pendente de portaria', {
+    aoMudar: function () {
+      portariaMembro.input.disabled = pendenteMembro.input.checked;
+      if (pendenteMembro.input.checked) portariaMembro.input.value = '';
+    }
+  });
+  const areaErroMembro = el('div', {});
+
+  const formMembro = el('form', {
+    onSubmit: async function (ev) {
+      ev.preventDefault();
+      limpar(areaErroMembro);
+      if (!nomeMembro.input.value || !cargoMembro.select.value) return;
+      // Art. 7o da LEP / item 4.3.1 da Nota Tecnica: a composicao da CTC precisa ser
+      // formalizada por portaria — exige o numero ou a marcacao explicita de pendencia.
+      if (!portariaMembro.input.value && !pendenteMembro.input.checked) {
+        areaErroMembro.appendChild(mensagemErro('Informe o número da portaria ou marque "designação pendente de portaria".'));
+        return;
+      }
+      const ok = await salvarComAviso([{ colecao: 'membrosCtc', acao: 'adicionou membro', registro: {
+        id: uid(), nome: nomeMembro.input.value, cargo: cargoMembro.select.value,
+        portaria: pendenteMembro.input.checked ? '' : portariaMembro.input.value,
+        portariaPendente: pendenteMembro.input.checked, removido: false
+      } }]);
+      if (!ok) return;
+      nomeMembro.input.value = ''; portariaMembro.input.value = ''; pendenteMembro.input.checked = false; portariaMembro.input.disabled = false;
+      recarregarMembros();
+    }
+  }, [
+    areaErroMembro,
+    el('div', { class: 'grade grade-3' }, [nomeMembro.wrap, cargoMembro.wrap, portariaMembro.wrap]),
+    pendenteMembro.wrap,
+    el('button', { class: 'botao botao-secundario', type: 'submit', texto: 'Adicionar membro' })
+  ]);
+
+  container.appendChild(cartao(podeEditar
+    ? [tabela, formMembro]
+    : [tabela, el('p', { class: 'texto-ajuda', texto: 'Só o(a) diretor(a), a SR ou o DPP alteram a composição da CTC.' })]));
+}
+
+// ---------------------------------------------------------------------
+// Pessoas privadas de liberdade — lista e cadastro
+// ---------------------------------------------------------------------
+function renderizarListaPessoas(container) {
+  container.appendChild(el('h2', { texto: 'Pessoas privadas de liberdade' }));
+
+  if (FILTRO_FASE) {
+    container.appendChild(el('div', { class: 'filtro-fase-ativo' }, [
+      el('span', {}, ['Mostrando só quem está na fase: ', el('strong', { texto: ROTULOS_FASE[FILTRO_FASE] || FILTRO_FASE })]),
+      botao('Limpar filtro', 'botao-texto', function () { FILTRO_FASE = null; renderizarApp(); })
+    ]));
+  }
+
+  const nome = campoTexto('Nome completo');
+  const nomeSocial = campoTexto('Nome social (se houver)');
+  const prontuario = campoTexto('Número de prontuário');
+  const regime = campoSelect('Regime', [{ valor: 'fechado', rotulo: 'Fechado' }, { valor: 'semiaberto', rotulo: 'Semiaberto' }, { valor: 'aberto', rotulo: 'Aberto' }], { comBranco: true });
+  const tipoPrisao = campoSelect('Tipo de prisão', [{ valor: 'definitiva', rotulo: 'Definitiva' }, { valor: 'provisoria', rotulo: 'Provisória' }], { comBranco: true });
+  const dataIngresso = campoTexto('Data de ingresso', { tipo: 'date', valor: hojeISO() });
+  const areaErro = el('div', {});
+
+  const form = el('form', {
+    class: 'card',
+    onSubmit: async function (ev) {
+      ev.preventDefault();
+      limpar(areaErro);
+      if (!nome.input.value) { areaErro.appendChild(mensagemErro('Informe o nome.')); return; }
+      const id = uid();
+      const pessoa = {
+        id: id, nome: nome.input.value, nomeSocial: nomeSocial.input.value, prontuario: prontuario.input.value,
+        regime: regime.select.value, tipoPrisao: tipoPrisao.select.value, dataIngresso: dataIngresso.input.value || hojeISO(),
+        situacao: 'ativo'
+      };
+      // Abre a fase de Classificacao e Singularizacao (inicio das Fichas 1-4/Modulo I e II),
+      // com o prazo da classificacao inicial calculado conforme o tipo do estabelecimento
+      // (72h/porta de entrada ou 60 dias/demais - item 4.3.6 da Nota Tecnica). Audiencia de
+      // Custodia e Ingresso no Equipamento Penal nao sao mais rastreadas como fases do
+      // sistema - ver ROTULOS_FASE acima e legal/referencias.md.
+      const fase = { id: uid(), pplId: id, fase: 'classificacao_singularizacao', dataInicio: dataIngresso.input.value || hojeISO(), dataPrazo: calcularPrazoClassificacaoInicial(dataIngresso.input.value), dataConclusao: null };
+      const ok = await salvarComAviso([
+        { colecao: 'pessoas', acao: 'registrou ingresso', registro: pessoa },
+        { colecao: 'fases', acao: 'abriu fase', registro: fase }
+      ]);
+      if (!ok) return;
+      renderizarApp();
+    }
+  }, [
+    el('h3', { texto: 'Registrar ingresso' }),
+    el('p', { class: 'texto-ajuda', texto: 'Abre automaticamente a fase de Classificação e Singularização (início da Ficha 1/Módulo I), com o prazo de classificação inicial calculado conforme o tipo da unidade.' }),
+    areaErro,
+    el('div', { class: 'grade grade-3' }, [nome.wrap, nomeSocial.wrap, prontuario.wrap, regime.wrap, tipoPrisao.wrap, dataIngresso.wrap]),
+    el('button', { class: 'botao botao-primario', type: 'submit', texto: 'Registrar' })
+  ]);
+  container.appendChild(form);
+
+  const pessoasNaFase = FILTRO_FASE
+    ? new Set(DADOS.fases.filter(function (f) { return f.fase === FILTRO_FASE && !f.dataConclusao; }).map(function (f) { return f.pplId; }))
+    : null;
+  const pessoasListadas = pessoasNaFase ? DADOS.pessoas.filter(function (p) { return pessoasNaFase.has(p.id); }) : DADOS.pessoas;
+
+  const tabela = el('table', {}, [
+    el('thead', {}, [el('tr', {}, [el('th', { texto: 'Nome' }), el('th', { texto: 'Prontuário' }), el('th', { texto: 'Regime' }), el('th', { texto: 'Ingresso' }), el('th', { texto: '' })])]),
+    el('tbody', {}, pessoasListadas.map(function (p) {
+      return el('tr', {}, [
+        el('td', { texto: p.nomeSocial || p.nome }), el('td', { texto: p.prontuario || '—' }),
+        el('td', { texto: p.regime || '—' }), el('td', { texto: formatarData(p.dataIngresso) }),
+        el('td', {}, [botao('Abrir', 'botao-texto', function () { PESSOA_SELECIONADA = p.id; renderizarApp(); })])
+      ]);
+    }))
+  ]);
+  if (pessoasNaFase && pessoasListadas.length === 0) {
+    container.appendChild(el('p', { class: 'texto-ajuda', texto: 'Ninguém está atualmente nesta fase.' }));
+  }
+  container.appendChild(cartao([tabela]));
+}
+
+// ---------------------------------------------------------------------
+// Detalhe de uma pessoa: fases, Modulo I, Modulo II, PIP
+// ---------------------------------------------------------------------
+function renderizarDetalhePessoa(container, pplId) {
+  const pessoa = DADOS.pessoas.find(function (p) { return p.id === pplId; });
+  if (!pessoa) { PESSOA_SELECIONADA = null; renderizarListaPessoas(container); return; }
+
+  container.appendChild(el('button', { class: 'botao-texto', texto: '← Voltar à lista', onClick: function () { PESSOA_SELECIONADA = null; renderizarApp(); } }));
+  container.appendChild(cartao([
+    el('h2', { texto: pessoa.nomeSocial || pessoa.nome }),
+    el('div', { class: 'texto-ajuda', texto: 'Prontuário: ' + (pessoa.prontuario || '—') + ' · Regime: ' + (pessoa.regime || '—') + ' · Ingresso: ' + formatarData(pessoa.dataIngresso) })
+  ]));
+
+  container.appendChild(el('h3', { texto: 'Fluxo de gestão penal' }));
+  const areaFases = el('div', {});
+  container.appendChild(areaFases);
+  renderizarFasesDaPessoa(areaFases, pessoa);
+
+  container.appendChild(el('h3', { texto: 'Instrumento Unificado de Classificação, PIP e Reclassificação' }));
+  renderizarFicha(container, pessoa, 'servico_social');
+  renderizarFicha(container, pessoa, 'psicologia');
+  renderizarFicha(container, pessoa, 'saude');
+  renderizarFicha(container, pessoa, 'policia_penal');
+  renderizarPip(container, pessoa);
+  renderizarFicha6(container, pessoa);
+}
+
+function renderizarFasesDaPessoa(container, pessoa) {
+  limpar(container);
+  const fases = DADOS.fases.filter(function (f) { return f.pplId === pessoa.id; }).sort(function (a, b) { return a.dataInicio < b.dataInicio ? -1 : 1; });
+
+  const lista = el('div', {}, fases.map(function (f) {
+    const atrasada = !f.dataConclusao && f.dataPrazo && f.dataPrazo < hojeISO();
+    const linha = el('div', { class: 'fase-item' + (atrasada ? ' atrasada' : '') }, [
+      el('strong', { texto: ROTULOS_FASE[f.fase] || f.fase }),
+      el('div', { class: 'texto-ajuda', texto: 'Início: ' + formatarData(f.dataInicio) + (f.dataPrazo ? ' · Prazo: ' + formatarData(f.dataPrazo) : '') + (f.dataConclusao ? ' · Concluída em ' + formatarData(f.dataConclusao) : '') })
+    ]);
+    if (!f.dataConclusao) {
+      linha.appendChild(botao('Concluir fase', 'botao-texto', async function () {
+        const ok = await salvarComAviso([{ colecao: 'fases', acao: 'concluiu fase', registro: Object.assign({}, f, { dataConclusao: hojeISO() }) }]);
+        if (ok) renderizarFasesDaPessoa(container, pessoa);
+      }));
+    }
+    return linha;
+  }));
+
+  const proximaFase = campoSelect('Abrir nova fase manualmente', ORDEM_FASES.map(function (f) { return { valor: f, rotulo: ROTULOS_FASE[f] }; }), { comBranco: true });
+  const abrirFase = botao('Abrir fase', 'botao-secundario', async function () {
+    if (!proximaFase.select.value) return;
+    const ok = await salvarComAviso([{ colecao: 'fases', acao: 'abriu fase', registro: { id: uid(), pplId: pessoa.id, fase: proximaFase.select.value, dataInicio: hojeISO(), dataPrazo: null, dataConclusao: null } }]);
+    if (ok) renderizarFasesDaPessoa(container, pessoa);
+  });
+
+  container.appendChild(cartao([lista, el('div', { class: 'grade grade-2' }, [proximaFase.wrap]), abrirFase]));
+}
+
+// Definicao campo a campo do "Instrumento Unificado de Classificacao, PIP e
+// Reclassificacao" (CTC SC, Santa Catarina, 2026), fornecido pela usuaria em
+// CTC_SC_Fichas_Unificadas.docx. Toda a redacao dos rotulos, opcoes de marcacao e
+// secoes abaixo e transcricao literal do documento -- ver legal/referencias.md (versao
+// completa do sistema) para a nota sobre os tipos de campo (texto/textarea/check/radio)
+// e as decisoes de interface documentadas.
+const CTC_PRIORIDADES = [
+  { valor: 'alta', rotulo: 'Alta' },
+  { valor: 'intermediaria', rotulo: 'Intermediária' },
+  { valor: 'baixa', rotulo: 'Baixa' }
+];
+
+const CTC_FICHAS_DEF = {
+  servico_social: {
+    titulo: 'Ficha 1 — Módulo I / Serviço Social',
+    chaveLista: 'fichasServicoSocial',
+    profissionalRotulo: 'Assistente Social',
+    registroRotulo: 'CRESS',
+    secoes: [
+      { titulo: '1. Identificação e vínculos', campos: [
+        { chave: 'nacionalidade', tipo: 'texto', rotulo: 'Nacionalidade' },
+        { chave: 'idioma_principal', tipo: 'texto', rotulo: 'Idioma principal' },
+        { chave: 'necessidade_interprete', tipo: 'radio', rotulo: 'Necessidade de intérprete', opcoes: [{ valor: 'sim', rotulo: 'Sim' }, { valor: 'nao', rotulo: 'Não' }] },
+        { chave: 'estado_civil', tipo: 'texto', rotulo: 'Estado civil' },
+        { chave: 'filhos_dependentes', tipo: 'texto', rotulo: 'Filhos/dependentes' },
+        { chave: 'principais_vinculos_familiares_comunitarios', tipo: 'textarea', rotulo: 'Principais vínculos familiares/comunitários' },
+        { chave: 'situacao_visitas', tipo: 'radio', rotulo: 'Situação de visitas', opcoes: [{ valor: 'recebe_visitas', rotulo: 'Recebe visitas' }, { valor: 'nao_recebe_visitas', rotulo: 'Não recebe visitas' }] },
+        { chave: 'frequencia_visitas', tipo: 'texto', rotulo: 'Frequência das visitas' },
+        { chave: 'vinculos_fragilizados_rompidos_risco', tipo: 'textarea', rotulo: 'Vínculos fragilizados, rompidos ou que representem risco' }
+      ]},
+      { titulo: '2. Documentação civil', campos: [
+        { chave: 'doc_certidao_nascimento', tipo: 'check', rotulo: 'Certidão de nascimento' },
+        { chave: 'doc_rg', tipo: 'check', rotulo: 'RG' },
+        { chave: 'doc_cpf', tipo: 'check', rotulo: 'CPF' },
+        { chave: 'doc_ctps', tipo: 'check', rotulo: 'CTPS' },
+        { chave: 'doc_titulo_eleitor', tipo: 'check', rotulo: 'Título de eleitor' },
+        { chave: 'doc_certidao_casamento', tipo: 'check', rotulo: 'Certidão de casamento' },
+        { chave: 'doc_outros', tipo: 'check', rotulo: 'Outros' },
+        { chave: 'doc_necessita_regularizacao', tipo: 'check', rotulo: 'Necessita regularização documental' }
+      ]},
+      { titulo: '3. Situação social anterior à prisão', campos: [
+        { chave: 'historico_situacao_rua', tipo: 'check', rotulo: 'Histórico de situação de rua' },
+        { chave: 'historico_acolhimento_institucionalizacao', tipo: 'check', rotulo: 'Histórico de acolhimento/institucionalização' },
+        { chave: 'recebia_beneficio_social', tipo: 'check', rotulo: 'Recebia benefício social' },
+        { chave: 'qual_beneficio', tipo: 'texto', rotulo: 'Qual benefício, se houver' },
+        { chave: 'exposicao_violencia_vulnerabilidade', tipo: 'textarea', rotulo: 'Exposição relevante a situações de violência ou vulnerabilidade' }
+      ]},
+      { titulo: '4. Rede de apoio e perspectivas', campos: [
+        { chave: 'referencia_familiar_comunitaria_pena', tipo: 'check', rotulo: 'Possui referência familiar/comunitária durante o cumprimento da pena' },
+        { chave: 'referencia_periodo_egresso', tipo: 'check', rotulo: 'Possui referência para o período de egresso' },
+        { chave: 'necessita_articulacao_suas', tipo: 'check', rotulo: 'Necessita articulação com SUAS' },
+        { chave: 'necessita_articulacao_sus', tipo: 'check', rotulo: 'Necessita articulação com SUS' },
+        { chave: 'necessita_regularizacao_documental_rede', tipo: 'check', rotulo: 'Necessita regularização documental' },
+        { chave: 'necessita_articulacao_rede_egressos', tipo: 'check', rotulo: 'Necessita articulação com rede para egressos' },
+        { chave: 'rede_outros', tipo: 'check', rotulo: 'Outros' }
+      ]},
+      { titulo: '5. Síntese técnica', campos: [{ chave: 'sintese_tecnica', tipo: 'textarea', rotulo: 'Síntese técnica' }] },
+      { titulo: '6. Necessidades e encaminhamentos', campos: [{ chave: 'necessidades_encaminhamentos', tipo: 'textarea', rotulo: 'Necessidades e encaminhamentos' }] },
+      { titulo: '7. Prioridade de acompanhamento social', campos: [
+        { chave: 'prioridade_acompanhamento_social', tipo: 'radio', rotulo: 'Prioridade de acompanhamento social', opcoes: CTC_PRIORIDADES },
+        { chave: 'fundamentacao_prioridade', tipo: 'textarea', rotulo: 'Fundamentação' }
+      ]}
+    ]
+  },
+  psicologia: {
+    titulo: 'Ficha 2 — Módulo I / Psicologia',
+    chaveLista: 'fichasPsicologia',
+    profissionalRotulo: 'Psicólogo(a)',
+    registroRotulo: 'CRP',
+    secoes: [
+      { titulo: '1. Condições da entrevista', campos: [
+        { chave: 'presencial', tipo: 'check', rotulo: 'Presencial' },
+        { chave: 'videoconferencia', tipo: 'check', rotulo: 'Videoconferência' },
+        { chave: 'condicoes_adequadas_privacidade', tipo: 'check', rotulo: 'Houve condições adequadas de privacidade' },
+        { chave: 'condicoes_inadequadas_privacidade', tipo: 'check', rotulo: 'Não houve condições adequadas de privacidade' },
+        { chave: 'limitacoes_relevantes_entrevista', tipo: 'textarea', rotulo: 'Limitações relevantes da entrevista' }
+      ]},
+      { titulo: '2. Aspectos subjetivos e relacionais pertinentes', campos: [
+        { chave: 'adaptacao_contexto_institucional', tipo: 'textarea', rotulo: 'Adaptação ao contexto institucional' },
+        { chave: 'rede_afetiva_relacional_referida', tipo: 'textarea', rotulo: 'Rede afetiva e relacional referida' },
+        { chave: 'estrategias_enfrentamento_identificadas', tipo: 'textarea', rotulo: 'Estratégias de enfrentamento identificadas' },
+        { chave: 'fatores_protecao_percebidos', tipo: 'textarea', rotulo: 'Fatores de proteção percebidos' },
+        { chave: 'situacoes_sofrimento_psiquico_relevantes', tipo: 'textarea', rotulo: 'Situações de sofrimento psíquico relevantes ao acompanhamento' }
+      ]},
+      { titulo: '3. Saúde mental e cuidado', campos: [
+        { chave: 'acompanhamento_psicologico_atual', tipo: 'check', rotulo: 'Acompanhamento psicológico atual' },
+        { chave: 'acompanhamento_psiquiatrico', tipo: 'check', rotulo: 'Acompanhamento psiquiátrico' },
+        { chave: 'uso_psicofarmacos', tipo: 'check', rotulo: 'Uso de psicofármacos' },
+        { chave: 'sofrimento_psiquico_relevante', tipo: 'check', rotulo: 'Sofrimento psíquico relevante' },
+        { chave: 'ideacao_suicida', tipo: 'check', rotulo: 'Ideação suicida' },
+        { chave: 'automutilacao', tipo: 'check', rotulo: 'Automutilação' },
+        { chave: 'historico_tentativa_suicidio', tipo: 'check', rotulo: 'Histórico de tentativa de suicídio' },
+        { chave: 'necessidade_avaliacao_psiquiatrica', tipo: 'check', rotulo: 'Necessidade de avaliação psiquiátrica' },
+        { chave: 'nenhuma_necessidade_especifica', tipo: 'check', rotulo: 'Nenhuma necessidade específica identificada' }
+      ]},
+      { titulo: '4. Participação em atividades e interesses', campos: [
+        { chave: 'participa_atividade_educacional', tipo: 'check', rotulo: 'Participa de atividade educacional' },
+        { chave: 'participa_atividade_laboral', tipo: 'check', rotulo: 'Participa de atividade laboral' },
+        { chave: 'participa_atividade_cultural', tipo: 'check', rotulo: 'Participa de atividade cultural' },
+        { chave: 'participa_atividade_terapeutica', tipo: 'check', rotulo: 'Participa de atividade terapêutica' },
+        { chave: 'interesses_declarados', tipo: 'textarea', rotulo: 'Interesses declarados' }
+      ]},
+      { titulo: '5. Síntese técnica', campos: [{ chave: 'sintese_tecnica', tipo: 'textarea', rotulo: 'Síntese técnica' }] },
+      { titulo: '6. Recomendações e encaminhamentos', campos: [{ chave: 'recomendacoes_encaminhamentos', tipo: 'textarea', rotulo: 'Recomendações e encaminhamentos' }],
+        nota: 'Observação: o registro psicológico destina-se à identificação de necessidades de acompanhamento e cuidado, não à formulação de prognóstico de reincidência ou juízo de periculosidade.' }
+    ]
+  },
+  saude: {
+    titulo: 'Ficha 3 — Informações de Saúde',
+    chaveLista: 'fichasSaude',
+    profissionalRotulo: 'Profissional responsável',
+    registroRotulo: 'Registro profissional',
+    secoes: [
+      { titulo: '1. Saúde física', campos: [
+        { chave: 'doenca_cronica_relevante', tipo: 'check', rotulo: 'Doença crônica relevante' },
+        { chave: 'uso_continuo_medicamentos', tipo: 'check', rotulo: 'Uso contínuo de medicamentos' },
+        { chave: 'necessidade_acompanhamento_regular', tipo: 'check', rotulo: 'Necessidade de acompanhamento regular' },
+        { chave: 'necessidade_adaptacao_alimentacao', tipo: 'check', rotulo: 'Necessidade de adaptação de alimentação' },
+        { chave: 'necessidade_adaptacao_mobilidade', tipo: 'check', rotulo: 'Necessidade de adaptação de mobilidade' },
+        { chave: 'necessidade_adaptacao_alojamento', tipo: 'check', rotulo: 'Necessidade de adaptação de alojamento' },
+        { chave: 'descricao_condicao_relevante', tipo: 'textarea', rotulo: 'Descrição/condição relevante' }
+      ]},
+      { titulo: '2. Saúde mental', campos: [
+        { chave: 'historico_transtorno_mental', tipo: 'check', rotulo: 'Histórico de transtorno mental' },
+        { chave: 'em_investigacao', tipo: 'check', rotulo: 'Em investigação' },
+        { chave: 'acompanhamento_psiquiatrico', tipo: 'check', rotulo: 'Acompanhamento psiquiátrico' },
+        { chave: 'indicacao_avaliacao_especializada', tipo: 'check', rotulo: 'Indicação de avaliação especializada' }
+      ]},
+      { titulo: '3. Uso de álcool e outras drogas', campos: [
+        { chave: 'relato_registro_uso_problematico', tipo: 'check', rotulo: 'Relato ou registro de uso problemático' },
+        { chave: 'necessita_encaminhamento_especifico', tipo: 'check', rotulo: 'Necessita encaminhamento específico' }
+      ]},
+      { titulo: '4. Prioridade de atenção em saúde', campos: [
+        { chave: 'prioridade_atencao_saude', tipo: 'radio', rotulo: 'Prioridade de atenção em saúde', opcoes: CTC_PRIORIDADES },
+        { chave: 'fundamentacao_prioridade', tipo: 'textarea', rotulo: 'Fundamentação' }
+      ]},
+      { titulo: '5. Encaminhamentos', campos: [{ chave: 'encaminhamentos', tipo: 'textarea', rotulo: 'Encaminhamentos' }] }
+    ]
+  },
+  policia_penal: {
+    titulo: 'Ficha 4 — Módulo II / Polícia Penal',
+    chaveLista: 'fichasPoliciaPenal',
+    profissionalRotulo: 'Servidor responsável',
+    registroRotulo: null,
+    secoes: [
+      { titulo: '1. Registro penal', campos: [
+        { chave: 'passagens_anteriores_sistema_prisional', tipo: 'check', rotulo: 'Há passagens anteriores pelo sistema prisional' },
+        { chave: 'vinculo_formal_organizacao_criminosa', tipo: 'check', rotulo: 'Há informação formal de vínculo com organização criminosa' },
+        { chave: 'vinculo_em_apuracao', tipo: 'check', rotulo: 'Informação sobre vínculo em apuração' },
+        { chave: 'necessidade_isolamento_restricao_convivencia', tipo: 'check', rotulo: 'Há necessidade registrada de isolamento ou restrição de convivência' },
+        { chave: 'grau_natureza_vinculo', tipo: 'textarea', rotulo: 'Grau/natureza do vínculo, se houver' },
+        { chave: 'fundamento_objetivo_isolamento_restricao', tipo: 'textarea', rotulo: 'Fundamento objetivo de eventual isolamento/restrição' }
+      ]},
+      { titulo: '2. Registro penitenciário', campos: [
+        { chave: 'comportamento', tipo: 'radio', rotulo: 'Comportamento', opcoes: [
+          { valor: 'bom', rotulo: 'Comportamento bom' }, { valor: 'regular', rotulo: 'Comportamento regular' },
+          { valor: 'prejudicado', rotulo: 'Comportamento prejudicado' }, { valor: 'sem_periodo_suficiente', rotulo: 'Sem período suficiente para avaliação' }
+        ]},
+        { chave: 'faltas_disciplinares', tipo: 'radio', rotulo: 'Faltas disciplinares', opcoes: [
+          { valor: 'sem_faltas', rotulo: 'Sem faltas disciplinares' }, { valor: 'leves', rotulo: 'Faltas leves' },
+          { valor: 'medias', rotulo: 'Faltas médias' }, { valor: 'graves', rotulo: 'Faltas graves' }
+        ]},
+        { chave: 'tentativa_consumacao_fuga', tipo: 'check', rotulo: 'Tentativa ou consumação de fuga' },
+        { chave: 'participacao_motim_rebeliao', tipo: 'check', rotulo: 'Participação em motim/rebelião' },
+        { chave: 'registro_aparelho_comunicacao', tipo: 'check', rotulo: 'Registro envolvendo aparelho de comunicação' },
+        { chave: 'recomendacao_transferencia', tipo: 'check', rotulo: 'Recomendação de transferência' },
+        { chave: 'restricao_convivencia', tipo: 'check', rotulo: 'Restrição de convivência' },
+        { chave: 'sintese_registros_relevantes', tipo: 'textarea', rotulo: 'Síntese dos registros relevantes' }
+      ]},
+      { titulo: '3. Registro processual', campos: [
+        { chave: 'regime_atual', tipo: 'texto', rotulo: 'Regime atual' },
+        { chave: 'pena_total', tipo: 'texto', rotulo: 'Pena total' },
+        { chave: 'previsao_beneficio_relevante', tipo: 'texto', rotulo: 'Previsão de benefício relevante' },
+        { chave: 'defensoria_publica', tipo: 'check', rotulo: 'Defensoria Pública' },
+        { chave: 'advogado_particular', tipo: 'check', rotulo: 'Advogado particular' },
+        { chave: 'situacao_defesa_verificar', tipo: 'check', rotulo: 'Situação de defesa a verificar' },
+        { chave: 'necessidade_atendimento_juridico', tipo: 'check', rotulo: 'Necessidade de atendimento jurídico' }
+      ]},
+      { titulo: '4. Aspectos institucionais de segurança e custódia', campos: [
+        { chave: 'risco_integridade_pessoa_custodiada', tipo: 'check', rotulo: 'Risco concreto à integridade da pessoa custodiada identificado' },
+        { chave: 'risco_integridade_terceiros_ordem_institucional', tipo: 'check', rotulo: 'Risco concreto à integridade de terceiros ou à ordem institucional identificado' },
+        { chave: 'descricao_objetiva_fonte_registro', tipo: 'textarea', rotulo: 'Descrição objetiva e fonte do registro' }
+      ]},
+      { titulo: '5. Síntese do Módulo II', campos: [{ chave: 'sintese_modulo_ii', tipo: 'textarea', rotulo: 'Síntese do Módulo II' }] }
+    ]
+  }
+};
+
+const CTC_FICHA5_SINTESE_CAMPOS = [
+  { chave: 'sinteseNecessidades', rotulo: 'Principais necessidades identificadas' },
+  { chave: 'sintesePotencialidades', rotulo: 'Potencialidades e fatores de proteção' },
+  { chave: 'sinteseSaude', rotulo: 'Aspectos de saúde relevantes' },
+  { chave: 'sinteseFamiliarSocial', rotulo: 'Aspectos familiares e sociais relevantes' },
+  { chave: 'sinteseEducacionalLaboral', rotulo: 'Aspectos educacionais e laborais' },
+  { chave: 'sinteseInstitucionalCustodia', rotulo: 'Aspectos institucionais de custódia e convivência' }
+];
+const CTC_FICHA5_ALOCACAO_OPCOES = [
+  { valor: 'manutencao_alocacao_atual', rotulo: 'Manutenção da alocação atual' },
+  { valor: 'reavaliacao_alocacao_interna', rotulo: 'Reavaliação da alocação interna' },
+  { valor: 'medida_protecao_separacao', rotulo: 'Medida de proteção/separação' },
+  { valor: 'avaliacao_transferencia', rotulo: 'Avaliação de transferência' },
+  { valor: 'outra_providencia', rotulo: 'Outra providência' }
+];
+const CTC_FICHA5_DELIBERACAO_OPCOES = [
+  { chave: 'pipAprovado', rotulo: 'PIP aprovado' },
+  { chave: 'necessariaComplementacao', rotulo: 'Necessária complementação' },
+  { chave: 'encaminhamentoImediato', rotulo: 'Encaminhamento imediato' },
+  { chave: 'reclassificacaoAntecipada', rotulo: 'Reclassificação antecipada' },
+  { chave: 'outraProvidencia', rotulo: 'Outra providência' }
+];
+const CTC_FICHA5_PARTICIPANTES_CAMPOS = [
+  { chave: 'direcao', rotulo: 'Direção' }, { chave: 'policiaPenal', rotulo: 'Polícia Penal' },
+  { chave: 'psicologia', rotulo: 'Psicologia' }, { chave: 'servicoSocial', rotulo: 'Serviço Social' },
+  { chave: 'saude', rotulo: 'Saúde' }, { chave: 'outros', rotulo: 'Outros' }
+];
+const CTC_PIP_AREAS = ['Saúde', 'Saúde mental', 'Assistência Social', 'Educação', 'Trabalho', 'Jurídico', 'Documentação', 'Vínculos familiares', 'Segurança/custódia', 'Outros'];
+
+const CTC_FICHA6_ALTERACOES_OPCOES = [
+  { chave: 'saudeFisica', rotulo: 'Saúde física' }, { chave: 'saudeMental', rotulo: 'Saúde mental' },
+  { chave: 'vinculosFamiliares', rotulo: 'Vínculos familiares' }, { chave: 'documentacaoCivil', rotulo: 'Documentação civil' },
+  { chave: 'educacao', rotulo: 'Educação' }, { chave: 'trabalho', rotulo: 'Trabalho' },
+  { chave: 'situacaoProcessual', rotulo: 'Situação processual' }, { chave: 'condutaDisciplinar', rotulo: 'Conduta disciplinar' },
+  { chave: 'segurancaConvivencia', rotulo: 'Segurança/convivência' }, { chave: 'outro', rotulo: 'Outro' }
+];
+const CTC_FICHA6_ALOCACAO_OPCOES = [
+  { valor: 'mantida', rotulo: 'Mantida' }, { valor: 'alterada', rotulo: 'Alterada' }, { valor: 'necessita_nova_avaliacao', rotulo: 'Necessita nova avaliação' }
+];
+const CTC_FICHA6_DELIBERACAO_OPCOES = [
+  { chave: 'mantemClassificacaoAnterior', rotulo: 'Mantém classificação anterior' },
+  { chave: 'alteraAspectosClassificacao', rotulo: 'Altera aspectos da classificação' },
+  { chave: 'atualizaPip', rotulo: 'Atualiza o PIP' },
+  { chave: 'recomendaProvidenciaEspecifica', rotulo: 'Recomenda providência específica' },
+  { chave: 'determinaNovaReclassificacaoAntecipada', rotulo: 'Determina nova reclassificação antecipada' }
+];
+
+// Renderizador generico das Fichas 1-4, a partir de CTC_FICHAS_DEF.
+function construirCampoFicha(campoDef) {
+  if (campoDef.tipo === 'texto') {
+    const c = campoTexto(campoDef.rotulo);
+    return { wrap: c.wrap, obterValor: function () { return c.input.value; }, definirValor: function (v) { c.input.value = v || ''; } };
+  }
+  if (campoDef.tipo === 'textarea') {
+    const c = campoTexto(campoDef.rotulo, { textarea: true });
+    return { wrap: c.wrap, obterValor: function () { return c.input.value; }, definirValor: function (v) { c.input.value = v || ''; } };
+  }
+  if (campoDef.tipo === 'check') {
+    const c = campoCheckbox(campoDef.rotulo);
+    return { wrap: c.wrap, obterValor: function () { return c.input.checked; }, definirValor: function (v) { c.input.checked = !!v; } };
+  }
+  if (campoDef.tipo === 'radio') {
+    const c = campoRadio(campoDef.rotulo, campoDef.opcoes);
+    return { wrap: c.wrap, obterValor: c.obterValor, definirValor: c.definirValor };
+  }
+  throw new Error('Tipo de campo desconhecido: ' + campoDef.tipo);
+}
+
+function renderizarFicha(container, pessoa, tipo) {
+  const def = CTC_FICHAS_DEF[tipo];
+  const areaOk = el('div', {});
+  const registrosExistentes = DADOS[def.chaveLista].filter(function (q) { return q.pplId === pessoa.id; });
+  // Uma ficha de cada tipo por pessoa, no documento <pplId>_<tipo>. Backups antigos
+  // podem ter mais de uma (importadas com o id original): vale a principal, ou a ultima.
+  const idFicha = pessoa.id + '_' + tipo;
+  const registroAtual = registrosExistentes.find(function (q) { return q.id === idFicha; })
+    || (registrosExistentes.length ? registrosExistentes[registrosExistentes.length - 1] : null);
+  const podeEditar = podeEditarFicha(tipo);
+
+  const profissionalNome = campoTexto(def.profissionalRotulo, { valor: registroAtual ? registroAtual.profissionalNome : '' });
+  const registro = def.registroRotulo ? campoTexto(def.registroRotulo, { valor: registroAtual ? registroAtual.registro : '' }) : null;
+  const dataReferencia = campoTexto('Data', { tipo: 'date', valor: registroAtual ? registroAtual.dataReferencia : '' });
+
+  const secoesRenderizadas = def.secoes.map(function (secaoDef) {
+    const fieldset = el('fieldset', {}, [el('legend', { texto: secaoDef.titulo })]);
+    const campos = {};
+    secaoDef.campos.forEach(function (campoDef) {
+      const campo = construirCampoFicha(campoDef);
+      if (registroAtual && registroAtual.valores && registroAtual.valores[campoDef.chave] !== undefined) {
+        campo.definirValor(registroAtual.valores[campoDef.chave]);
+      }
+      campos[campoDef.chave] = campo;
+      fieldset.appendChild(campo.wrap);
+    });
+    if (secaoDef.nota) fieldset.appendChild(el('p', { class: 'ficha-nota', texto: secaoDef.nota }));
+    return { fieldset: fieldset, campos: campos };
+  });
+
+  const autoria = el('div', { class: 'autoria', texto: registroAtual ? textoAutoria('fichas', registroAtual.id) : '' });
+  // registroAtual guarda a versao (_rev) em que esta tela se baseou; cada gravacao avanca
+  let baseAtual = registroAtual;
+  const salvar = botao('Salvar ' + def.titulo, 'botao-primario', async function () {
+    limpar(areaOk);
+    const valores = {};
+    secoesRenderizadas.forEach(function (s) {
+      Object.keys(s.campos).forEach(function (chave) { valores[chave] = s.campos[chave].obterValor(); });
+    });
+    const registro2 = Object.assign({}, baseAtual || {}, {
+      id: baseAtual ? baseAtual.id : idFicha, pplId: pessoa.id, tipo: tipo,
+      profissionalNome: profissionalNome.input.value,
+      registro: registro ? registro.input.value : null,
+      dataReferencia: dataReferencia.input.value,
+      valores: valores
+    });
+    const ok = await salvarComAviso([{ colecao: 'fichas', acao: 'salvou ' + def.titulo, registro: registro2 }]);
+    if (!ok) return;
+    baseAtual = copiaParaTela(CACHE.fichas.get(registro2.id));
+    autoria.textContent = textoAutoria('fichas', registro2.id);
+    areaOk.appendChild(mensagemOk(def.titulo + ' salva.'));
+  });
+
+  const cabecalho = el('div', { class: 'grade grade-3' }, [profissionalNome.wrap, registro ? registro.wrap : null, dataReferencia.wrap].filter(Boolean));
+
+  const conteudo = [autoria, areaOk, cabecalho]
+    .concat(secoesRenderizadas.map(function (s) { return s.fieldset; }))
+    .concat([podeEditar ? salvar : el('p', { class: 'texto-ajuda', texto: 'Só quem é ' + areasQueEditamFicha(tipo) + ' na unidade (ou a SR e o DPP) edita esta ficha. Você pode consultá-la.' })]);
+
+  const cartaoFicha = cartaoRecolhivel(def.titulo, conteudo);
+  if (!podeEditar) desabilitarCampos(cartaoFicha);
+  container.appendChild(cartaoFicha);
+}
+
+
+// ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// Ficha 5 — Sintese Colegiada e Programa Individualizador da Pena (PIP)
+// ---------------------------------------------------------------------
+
+// Reune o que ja foi preenchido nas Fichas 1-4 para sugerir um rascunho da Ficha 5,
+// respondendo ao pedido de preenchimento automatico do PIP a partir dos modulos. So
+// copia texto/marcacoes JA REGISTRADOS (nunca gera sintese ou decisao nova); os campos
+// "Acao", "Responsavel" e "Prazo" da tabela do PIP e a deliberacao da CTC nunca sao
+// preenchidos automaticamente, por nao existir essa informacao nas fichas de origem.
+function obterSugestaoAutoPreenchimento(pessoa) {
+  const f1 = DADOS.fichasServicoSocial.filter(function (r) { return r.pplId === pessoa.id; }).slice(-1)[0] || null;
+  const f2 = DADOS.fichasPsicologia.filter(function (r) { return r.pplId === pessoa.id; }).slice(-1)[0] || null;
+  const f3 = DADOS.fichasSaude.filter(function (r) { return r.pplId === pessoa.id; }).slice(-1)[0] || null;
+  const f4 = DADOS.fichasPoliciaPenal.filter(function (r) { return r.pplId === pessoa.id; }).slice(-1)[0] || null;
+  const v1 = f1 ? f1.valores : {};
+  const v2 = f2 ? f2.valores : {};
+  const v3 = f3 ? f3.valores : {};
+  const v4 = f4 ? f4.valores : {};
+  const juntar = function () {
+    return Array.prototype.slice.call(arguments).filter(function (p) { return p && String(p).trim(); }).join('\n');
+  };
+
+  return {
+    sinteseNecessidades: juntar(v1.necessidades_encaminhamentos, v2.recomendacoes_encaminhamentos, v3.encaminhamentos),
+    sintesePotencialidades: juntar(v2.fatores_protecao_percebidos),
+    sinteseSaude: juntar(v3.descricao_condicao_relevante, v2.situacoes_sofrimento_psiquico_relevantes),
+    sinteseFamiliarSocial: juntar(v1.principais_vinculos_familiares_comunitarios, v1.vinculos_fragilizados_rompidos_risco),
+    sinteseEducacionalLaboral: juntar(v2.interesses_declarados),
+    sinteseInstitucionalCustodia: juntar(v4.sintese_registros_relevantes, v4.descricao_objetiva_fonte_registro),
+    // Educacao: nenhuma ficha registra uma prioridade de educacao (so participacao/
+    // interesse) - por isso nao e sugerida, para nao inventar um valor.
+    prioridadeEducacao: null,
+    prioridadeSaude: v3.prioridade_atencao_saude || null,
+    prioridadeSocialJuridica: v1.prioridade_acompanhamento_social || null,
+    pipTabela: [
+      { area: 'Saúde', necessidadeObjetivo: v3.encaminhamentos || '' },
+      { area: 'Saúde mental', necessidadeObjetivo: v2.recomendacoes_encaminhamentos || '' },
+      { area: 'Assistência Social', necessidadeObjetivo: v1.necessidades_encaminhamentos || '' },
+      { area: 'Educação', necessidadeObjetivo: v2.participa_atividade_educacional ? 'Participa de atividade educacional (ver Ficha 2)' : '' },
+      { area: 'Trabalho', necessidadeObjetivo: v2.participa_atividade_laboral ? 'Participa de atividade laboral (ver Ficha 2)' : '' },
+      { area: 'Jurídico', necessidadeObjetivo: v4.necessidade_atendimento_juridico ? 'Necessidade de atendimento jurídico (Ficha 4)' : '' },
+      { area: 'Documentação', necessidadeObjetivo: v1.doc_necessita_regularizacao ? 'Necessita regularização documental (Ficha 1)' : '' },
+      { area: 'Vínculos familiares', necessidadeObjetivo: v1.vinculos_fragilizados_rompidos_risco || '' },
+      { area: 'Segurança/custódia', necessidadeObjetivo: v4.descricao_objetiva_fonte_registro || '' },
+      { area: 'Outros', necessidadeObjetivo: '' }
+    ],
+    fontesDisponiveis: { servico_social: !!f1, psicologia: !!f2, saude: !!f3, policia_penal: !!f4 }
+  };
+}
+
+function construirTabelaPip(container) {
+  const linhasCampos = CTC_PIP_AREAS.map(function (area) {
+    return {
+      area: area,
+      necessidade: el('textarea', {}),
+      acao: el('textarea', {}),
+      responsavel: el('input', { type: 'text' }),
+      prazo: el('input', { type: 'text' })
+    };
+  });
+  const tabela = el('table', { class: 'tabela-pip' }, [
+    el('thead', {}, [el('tr', {}, [
+      el('th', { texto: 'Área' }), el('th', { texto: 'Necessidade/objetivo' }),
+      el('th', { texto: 'Ação' }), el('th', { texto: 'Responsável' }), el('th', { texto: 'Prazo' })
+    ])]),
+    el('tbody', {}, linhasCampos.map(function (l) {
+      return el('tr', {}, [el('td', { texto: l.area }), el('td', {}, [l.necessidade]), el('td', {}, [l.acao]), el('td', {}, [l.responsavel]), el('td', {}, [l.prazo])]);
+    }))
+  ]);
+  container.appendChild(tabela);
+  return {
+    obterValores: function () {
+      return linhasCampos.map(function (l) {
+        return { area: l.area, necessidadeObjetivo: l.necessidade.value, acao: l.acao.value, responsavel: l.responsavel.value, prazo: l.prazo.value };
+      });
+    },
+    definirValores: function (lista) {
+      if (!lista) return;
+      linhasCampos.forEach(function (l) {
+        const c = lista.find(function (x) { return x.area === l.area; });
+        if (!c) return;
+        l.necessidade.value = c.necessidadeObjetivo || ''; l.acao.value = c.acao || '';
+        l.responsavel.value = c.responsavel || ''; l.prazo.value = c.prazo || '';
+      });
+    },
+    preencherSugestoes: function (lista) {
+      if (!lista) return;
+      linhasCampos.forEach(function (l) {
+        const c = lista.find(function (x) { return x.area === l.area; });
+        if (c && !l.necessidade.value && c.necessidadeObjetivo) l.necessidade.value = c.necessidadeObjetivo;
+      });
+    }
+  };
+}
+
+function renderizarPip(container, pessoa) {
+  const areaErro = el('div', {});
+  const historico = el('div', {});
+
+  const camposSintese = {};
+  const fieldsetSintese = el('fieldset', {}, [el('legend', { texto: '1. Síntese interdisciplinar' })]);
+  CTC_FICHA5_SINTESE_CAMPOS.forEach(function (c) {
+    const campo = campoTexto(c.rotulo, { textarea: true });
+    camposSintese[c.chave] = campo.input;
+    fieldsetSintese.appendChild(campo.wrap);
+  });
+
+  const prioEducacao = campoRadio('Educação', CTC_PRIORIDADES);
+  const prioSaude = campoRadio('Saúde física/mental', CTC_PRIORIDADES);
+  const prioSocialJuridica = campoRadio('Social/jurídica', CTC_PRIORIDADES);
+  const fieldsetPrioridades = el('fieldset', {}, [el('legend', { texto: '2. Prioridades' }), prioEducacao.wrap, prioSaude.wrap, prioSocialJuridica.wrap]);
+
+  const fieldsetPip = el('fieldset', {}, [el('legend', { texto: '3. Programa Individualizador da Pena – PIP' })]);
+  const tabelaPip = construirTabelaPip(fieldsetPip);
+
+  const botaoAutoPreencher = botao('Pré-preencher com base nas Fichas 1–4', 'botao-secundario', function () {
+    const sugestao = obterSugestaoAutoPreenchimento(pessoa);
+    Object.keys(camposSintese).forEach(function (chave) {
+      if (!camposSintese[chave].value && sugestao[chave]) camposSintese[chave].value = sugestao[chave];
+    });
+    if (!prioEducacao.obterValor() && sugestao.prioridadeEducacao) prioEducacao.definirValor(sugestao.prioridadeEducacao);
+    if (!prioSaude.obterValor() && sugestao.prioridadeSaude) prioSaude.definirValor(sugestao.prioridadeSaude);
+    if (!prioSocialJuridica.obterValor() && sugestao.prioridadeSocialJuridica) prioSocialJuridica.definirValor(sugestao.prioridadeSocialJuridica);
+    tabelaPip.preencherSugestoes(sugestao.pipTabela);
+    const faltando = Object.keys(sugestao.fontesDisponiveis).filter(function (k) { return !sugestao.fontesDisponiveis[k]; });
+    alert('Campos vazios foram preenchidos com o que já consta nas Fichas 1–4. Revise tudo antes de salvar.' +
+      (faltando.length ? ' Ainda não há registro de: ' + faltando.join(', ') + '.' : ''));
+  });
+
+  const alocacao = campoRadio('Providência quanto à alocação e convivência', CTC_FICHA5_ALOCACAO_OPCOES);
+  const alocacaoFundamentacao = campoTexto('Fundamentação objetiva', { textarea: true });
+  const fieldsetAlocacao = el('fieldset', {}, [el('legend', { texto: '4. Alocação e convivência' }), alocacao.wrap, alocacaoFundamentacao.wrap]);
+
+  const camposDeliberacao = {};
+  const checksDeliberacao = CTC_FICHA5_DELIBERACAO_OPCOES.map(function (o) {
+    const c = campoCheckbox(o.rotulo); camposDeliberacao[o.chave] = c.input; return c.wrap;
+  });
+  const deliberacaoObservacoes = campoTexto('Observações', { textarea: true });
+  const fieldsetDeliberacao = el('fieldset', {}, [el('legend', { texto: '5. Deliberação' })].concat(checksDeliberacao).concat([deliberacaoObservacoes.wrap]));
+
+  const camposParticipantes = {};
+  const camposParticipantesEl = CTC_FICHA5_PARTICIPANTES_CAMPOS.map(function (c) {
+    const campo = campoTexto(c.rotulo); camposParticipantes[c.chave] = campo.input; return campo.wrap;
+  });
+  const fieldsetParticipantes = el('fieldset', {}, [el('legend', { texto: '6. Participantes' }), el('div', { class: 'grade grade-3' }, camposParticipantesEl)]);
+
+  const form = el('form', {
+    onSubmit: async function (ev) {
+      ev.preventDefault();
+      limpar(areaErro);
+
+      const deliberacao = {};
+      Object.keys(camposDeliberacao).forEach(function (chave) { deliberacao[chave] = camposDeliberacao[chave].checked; });
+      deliberacao.observacoes = deliberacaoObservacoes.input.value;
+      const participantes = {};
+      Object.keys(camposParticipantes).forEach(function (chave) { participantes[chave] = camposParticipantes[chave].value; });
+
+      // A Ficha 5 nao pede numero de meses ate a reclassificacao (esse campo so aparece,
+      // como data editavel, na Ficha 6) - por isso o agendamento inicial usa o teto legal
+      // de 12 meses (item 4.4.2.2.4 da Nota Tecnica).
+      const dataReclassificacao = calcularDataReclassificacao(hojeISO(), RECLASSIFICACAO_MAXIMA_MESES);
+      const pip = {
+        id: uid(), pplId: pessoa.id, elaboradoEm: hojeISO(),
+        aprovadoPelaCtc: !!deliberacao.pipAprovado,
+        dataPrevistaReclassificacao: dataReclassificacao,
+        sinteseNecessidades: camposSintese.sinteseNecessidades.value,
+        sintesePotencialidades: camposSintese.sintesePotencialidades.value,
+        sinteseSaude: camposSintese.sinteseSaude.value,
+        sinteseFamiliarSocial: camposSintese.sinteseFamiliarSocial.value,
+        sinteseEducacionalLaboral: camposSintese.sinteseEducacionalLaboral.value,
+        sinteseInstitucionalCustodia: camposSintese.sinteseInstitucionalCustodia.value,
+        prioridadeEducacao: prioEducacao.obterValor() || null,
+        prioridadeSaude: prioSaude.obterValor() || null,
+        prioridadeSocialJuridica: prioSocialJuridica.obterValor() || null,
+        pipTabela: tabelaPip.obterValores(),
+        alocacaoConvivencia: { alocacao: alocacao.obterValor() || null, fundamentacao: alocacaoFundamentacao.input.value },
+        deliberacao: deliberacao,
+        participantes: participantes
+      };
+      const faseAberta = DADOS.fases.find(function (f) { return f.pplId === pessoa.id && f.fase === 'classificacao_singularizacao' && !f.dataConclusao; });
+      const ok = await salvarComAviso([
+        { colecao: 'pips', acao: 'registrou Ficha 5 / PIP', registro: pip },
+        { colecao: 'reclassificacoes', acao: 'agendou reclassificação', registro: { id: uid(), pplId: pessoa.id, pipAnteriorId: pip.id, dataPrevista: pip.dataPrevistaReclassificacao, motivo: 'periodica', status: 'pendente' } },
+        faseAberta
+          ? { colecao: 'fases', acao: 'concluiu fase', registro: Object.assign({}, faseAberta, { dataConclusao: hojeISO() }) }
+          : { colecao: 'fases', acao: 'registrou fase concluída', registro: { id: uid(), pplId: pessoa.id, fase: 'classificacao_singularizacao', dataInicio: hojeISO(), dataPrazo: null, dataConclusao: hojeISO() } }
+      ]);
+      if (!ok) return;
+      alert('Ficha 5 (Síntese Colegiada e PIP) registrada. Reclassificação prevista para ' + formatarData(pip.dataPrevistaReclassificacao) + ' — a data poderá ser ajustada ao preencher a Ficha 6.');
+      recarregarHistorico();
+      renderizarApp();
+    }
+  }, [
+    areaErro, botaoAutoPreencher,
+    fieldsetSintese, fieldsetPrioridades, fieldsetPip, fieldsetAlocacao, fieldsetDeliberacao, fieldsetParticipantes,
+    el('button', { class: 'botao botao-sucesso', type: 'submit', texto: 'Registrar Ficha 5 e agendar reclassificação' })
+  ]);
+
+  function recarregarHistorico() {
+    limpar(historico);
+    const planos = DADOS.pips.filter(function (p) { return p.pplId === pessoa.id; });
+    if (!planos.length) return;
+    const tabela = el('table', {}, [
+      el('thead', {}, [el('tr', {}, [el('th', { texto: 'Elaborado em' }), el('th', { texto: 'Aprovado pela CTC' }), el('th', { texto: 'Reclassificação prevista' }), el('th', { texto: '' })])]),
+      el('tbody', {}, planos.map(function (p) {
+        return el('tr', {}, [
+          el('td', { texto: formatarData(p.elaboradoEm) }),
+          el('td', {}, [badge(p.aprovadoPelaCtc ? 'Sim' : 'Não', p.aprovadoPelaCtc ? 'badge-verde' : 'badge-cinza')]),
+          el('td', { texto: formatarData(p.dataPrevistaReclassificacao) }),
+          el('td', {}, [botao('Imprimir', 'botao-texto', function () { imprimirPip(pessoa, p); })])
+        ]);
+      }))
+    ]);
+    historico.appendChild(cartao([el('h3', { texto: 'Histórico — Ficha 5 / PIP' }), tabela]));
+  }
+
+  container.appendChild(cartaoRecolhivel('Ficha 5 — Síntese Colegiada e Programa Individualizador da Pena (PIP)', [form]));
+  container.appendChild(historico);
+  recarregarHistorico();
+}
+
+// Escapa texto digitado antes de montar o HTML da impressao (com varios usuarios, o
+// que um digita aparece na tela do outro).
+function esc(valor) {
+  return String(valor).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function imprimirPip(pessoa, pip) {
+  const janela = window.open('', '_blank');
+  const linhasTabela = (pip.pipTabela || []).map(function (l) {
+    return '<tr><td>' + esc(l.area) + '</td><td>' + esc(l.necessidadeObjetivo || '—') + '</td><td>' + esc(l.acao || '—') + '</td><td>' + esc(l.responsavel || '—') + '</td><td>' + esc(l.prazo || '—') + '</td></tr>';
+  }).join('');
+  janela.document.write(
+    '<html><head><meta charset="UTF-8"><title>Ficha 5 - PIP - ' + esc(pessoa.nomeSocial || pessoa.nome) + '</title>' +
+    '<style>body{font-family:Arial,sans-serif;padding:2rem;color:#333} h1{font-size:1.2rem} h2{font-size:1rem;margin-top:1.5rem} .rotulo{font-weight:bold} table{width:100%;border-collapse:collapse;font-size:0.85rem} td,th{border:1px solid #ccc;padding:0.3rem;text-align:left}</style>' +
+    '</head><body>' +
+    '<h1>Ficha 5 — Síntese Colegiada e Programa Individualizador da Pena (PIP)</h1>' +
+    '<p><span class="rotulo">Unidade:</span> ' + esc(DADOS.unidade.nome || '—') + '</p>' +
+    '<p><span class="rotulo">Pessoa:</span> ' + esc(pessoa.nomeSocial || pessoa.nome) + ' — Prontuário: ' + esc(pessoa.prontuario || '—') + '</p>' +
+    '<p><span class="rotulo">Elaborado em:</span> ' + formatarData(pip.elaboradoEm) + '</p>' +
+    '<h2>1. Síntese interdisciplinar</h2>' +
+    CTC_FICHA5_SINTESE_CAMPOS.map(function (c) { return '<p><span class="rotulo">' + c.rotulo + ':</span> ' + esc(pip[c.chave] || '—') + '</p>'; }).join('') +
+    '<h2>2. Prioridades</h2><p>Educação: ' + esc(pip.prioridadeEducacao || '—') + ' · Saúde física/mental: ' + esc(pip.prioridadeSaude || '—') + ' · Social/jurídica: ' + esc(pip.prioridadeSocialJuridica || '—') + '</p>' +
+    '<h2>3. Programa Individualizador da Pena – PIP</h2><table><thead><tr><th>Área</th><th>Necessidade/objetivo</th><th>Ação</th><th>Responsável</th><th>Prazo</th></tr></thead><tbody>' + linhasTabela + '</tbody></table>' +
+    '<h2>4. Alocação e convivência</h2><p>' + esc((pip.alocacaoConvivencia || {}).alocacao || '—') + ' — ' + esc((pip.alocacaoConvivencia || {}).fundamentacao || '') + '</p>' +
+    '<h2>5. Deliberação</h2><p>PIP aprovado: ' + (pip.aprovadoPelaCtc ? 'Sim' : 'Não') + ' — ' + esc((pip.deliberacao || {}).observacoes || '') + '</p>' +
+    '<p><span class="rotulo">Reclassificação prevista:</span> ' + formatarData(pip.dataPrevistaReclassificacao) + '</p>' +
+    '<hr><p style="font-size:0.75rem;color:#666">Base legal: Lei nº 7.210/1984 (arts. 5º a 9º); Nota Técnica nº 1/2026/GT-CTC/GABSEC/SENAPPEN/MJ; instrumento CTC SC (2026).</p>' +
+    '</body></html>'
+  );
+  janela.document.close();
+  janela.focus();
+  janela.print();
+}
+
+// ---------------------------------------------------------------------
+// Ficha 6 — Reclassificacao (item 4.4.2.2.4 da Nota Tecnica: 6 a 12 meses)
+// ---------------------------------------------------------------------
+function renderizarFicha6(container, pessoa) {
+  const areaErro = el('div', {});
+  const areaForm = el('div', {});
+  const historico = el('div', {});
+
+  container.appendChild(cartaoRecolhivel('Ficha 6 — Reclassificação', [areaErro, areaForm, historico]));
+
+  function carregar() {
+    limpar(areaForm);
+    limpar(historico);
+    const lista = DADOS.reclassificacoes.filter(function (r) { return r.pplId === pessoa.id; });
+    const pendente = lista.find(function (r) { return r.status === 'pendente' || r.status === 'atrasada'; });
+    if (pendente) {
+      areaForm.appendChild(construirFormularioFicha6(pendente));
+    } else {
+      areaForm.appendChild(el('p', { class: 'texto-ajuda', texto: 'Nenhuma reclassificação pendente no momento — foi aberta automaticamente ao registrar a Ficha 5.' }));
+    }
+    const realizadas = lista.filter(function (r) { return r.status === 'realizada'; });
+    if (realizadas.length) {
+      const tabela = el('table', {}, [
+        el('thead', {}, [el('tr', {}, [el('th', { texto: 'Realizada em' }), el('th', { texto: 'Motivo' })])]),
+        el('tbody', {}, realizadas.map(function (r) {
+          return el('tr', {}, [el('td', { texto: formatarData(r.dataRealizada) }), el('td', { texto: r.motivo })]);
+        }))
+      ]);
+      historico.appendChild(cartao([el('h4', { texto: 'Histórico de reclassificações' }), tabela]));
+    }
+  }
+
+  function construirFormularioFicha6(pendente) {
+    const cumprAcoesRealizadas = campoTexto('Ações previstas efetivamente realizadas', { textarea: true });
+    const cumprAcoesNaoRealizadas = campoTexto('Ações não realizadas', { textarea: true });
+    const cumprMotivos = campoTexto('Motivos da não execução', { textarea: true });
+    const fieldsetCumprimento = el('fieldset', {}, [el('legend', { texto: '1. Cumprimento do PIP anterior' }), cumprAcoesRealizadas.wrap, cumprAcoesNaoRealizadas.wrap, cumprMotivos.wrap]);
+
+    const camposAlteracoes = {};
+    const checksAlteracoes = CTC_FICHA6_ALTERACOES_OPCOES.map(function (o) { const c = campoCheckbox(o.rotulo); camposAlteracoes[o.chave] = c.input; return c.wrap; });
+    const alteracoesDescricao = campoTexto('Descrição', { textarea: true });
+    const fieldsetAlteracoes = el('fieldset', {}, [el('legend', { texto: '2. Alterações desde a última classificação' })].concat(checksAlteracoes).concat([alteracoesDescricao.wrap]));
+
+    const novasNecessidades = campoTexto('Novas necessidades identificadas', { textarea: true });
+    const fieldsetNovasNecessidades = el('fieldset', {}, [el('legend', { texto: '3. Novas necessidades identificadas' }), novasNecessidades.wrap]);
+
+    const reavEducacao = campoRadio('Educação', CTC_PRIORIDADES);
+    const reavSaude = campoRadio('Saúde física/mental', CTC_PRIORIDADES);
+    const reavSocialJuridica = campoRadio('Social/jurídica', CTC_PRIORIDADES);
+    const fieldsetReavaliacao = el('fieldset', {}, [el('legend', { texto: '4. Reavaliação das prioridades' }), reavEducacao.wrap, reavSaude.wrap, reavSocialJuridica.wrap]);
+
+    const revPermanecem = campoTexto('Ações que permanecem', { textarea: true });
+    const revConcluidas = campoTexto('Ações concluídas', { textarea: true });
+    const revSubstituidas = campoTexto('Ações que devem ser substituídas ou incluídas', { textarea: true });
+    const fieldsetRevisao = el('fieldset', {}, [el('legend', { texto: '5. Revisão do PIP' }), revPermanecem.wrap, revConcluidas.wrap, revSubstituidas.wrap]);
+
+    const botaoAutoPreencher = botao('Pré-preencher com as ações do PIP anterior', 'botao-secundario', function () {
+      const planos = DADOS.pips.filter(function (p) { return p.pplId === pessoa.id; });
+      if (!planos.length) { alert('Ainda não há Ficha 5 / PIP registrado para esta pessoa.'); return; }
+      const ultimo = planos[planos.length - 1];
+      const acoes = (ultimo.pipTabela || []).filter(function (l) { return l.acao; }).map(function (l) { return '- [' + l.area + '] ' + l.acao; }).join('\n');
+      if (acoes && !revPermanecem.input.value) revPermanecem.input.value = acoes;
+      alert('Ações do último PIP copiadas para "Ações que permanecem" — mova para "Concluídas" ou "Substituídas/incluídas" conforme o caso e edite livremente.');
+    });
+
+    const situacao = campoRadio('Situação de alocação e convivência', CTC_FICHA6_ALOCACAO_OPCOES);
+    const situacaoFundamentacao = campoTexto('Fundamentação', { textarea: true });
+    const fieldsetSituacao = el('fieldset', {}, [el('legend', { texto: '6. Situação de alocação e convivência' }), situacao.wrap, situacaoFundamentacao.wrap]);
+
+    const camposDeliberacao = {};
+    const checksDeliberacao = CTC_FICHA6_DELIBERACAO_OPCOES.map(function (o) { const c = campoCheckbox(o.rotulo); camposDeliberacao[o.chave] = c.input; return c.wrap; });
+    const deliberacaoObservacoes = campoTexto('Observações', { textarea: true });
+    const fieldsetDeliberacao = el('fieldset', {}, [el('legend', { texto: '7. Deliberação da CTC' })].concat(checksDeliberacao).concat([deliberacaoObservacoes.wrap]));
+
+    const dataPadrao = new Date();
+    dataPadrao.setMonth(dataPadrao.getMonth() + RECLASSIFICACAO_MAXIMA_MESES);
+    const dataPrevistaProxima = campoTexto('Data prevista da próxima reclassificação (entre 6 e 12 meses a partir de hoje — item 4.4.2.2.4 da Nota Técnica)', { tipo: 'date', valor: paraISODate(dataPadrao) });
+    const fieldsetProxima = el('fieldset', {}, [el('legend', { texto: '8. Próxima reclassificação' }), dataPrevistaProxima.wrap]);
+
+    return el('form', {
+      onSubmit: async function (ev) {
+        ev.preventDefault();
+        limpar(areaErro);
+
+        const hoje = new Date();
+        const limiteMin = somarMeses(hoje, RECLASSIFICACAO_MINIMA_MESES);
+        const limiteMax = somarMeses(hoje, RECLASSIFICACAO_MAXIMA_MESES);
+        const proximaData = new Date((dataPrevistaProxima.input.value || paraISODate(limiteMax)) + 'T00:00:00');
+        if (isNaN(proximaData.getTime()) || proximaData < limiteMin || proximaData > limiteMax) {
+          areaErro.appendChild(mensagemErro('Data prevista para a próxima reclassificação deve estar entre ' + RECLASSIFICACAO_MINIMA_MESES + ' e ' + RECLASSIFICACAO_MAXIMA_MESES + ' meses a partir de hoje (item 4.4.2.2.4 da Nota Técnica). Para antecipar por alteração significativa, use o registro de reclassificação extraordinária, na aba "Reclassificações".'));
+          return;
+        }
+
+        const alteracoes = {};
+        Object.keys(camposAlteracoes).forEach(function (chave) { alteracoes[chave] = camposAlteracoes[chave].checked; });
+        alteracoes.descricao = alteracoesDescricao.input.value;
+        const deliberacaoCtc = {};
+        Object.keys(camposDeliberacao).forEach(function (chave) { deliberacaoCtc[chave] = camposDeliberacao[chave].checked; });
+        deliberacaoCtc.observacoes = deliberacaoObservacoes.input.value;
+
+        const realizada = Object.assign({}, pendente, {
+          status: 'realizada',
+          dataRealizada: hojeISO(),
+          cumprimentoPipAnterior: { acoesPrevistasRealizadas: cumprAcoesRealizadas.input.value, acoesNaoRealizadas: cumprAcoesNaoRealizadas.input.value, motivosNaoExecucao: cumprMotivos.input.value },
+          alteracoesDesdeUltimaClassificacao: alteracoes,
+          novasNecessidades: novasNecessidades.input.value,
+          reavaliacaoPrioridadeEducacao: reavEducacao.obterValor() || null,
+          reavaliacaoPrioridadeSaude: reavSaude.obterValor() || null,
+          reavaliacaoPrioridadeSocialJuridica: reavSocialJuridica.obterValor() || null,
+          revisaoPip: { acoesPermanecem: revPermanecem.input.value, acoesConcluidas: revConcluidas.input.value, acoesSubstituidasIncluidas: revSubstituidas.input.value },
+          situacaoAlocacaoConvivencia: { situacao: situacao.obterValor() || null, fundamentacao: situacaoFundamentacao.input.value },
+          deliberacaoCtc: deliberacaoCtc
+        });
+
+        const ok = await salvarComAviso([
+          { colecao: 'reclassificacoes', acao: 'registrou Ficha 6', registro: realizada },
+          { colecao: 'reclassificacoes', acao: 'agendou reclassificação', registro: { id: uid(), pplId: pessoa.id, pipAnteriorId: pendente.pipAnteriorId, dataPrevista: paraISODate(proximaData), motivo: 'periodica', status: 'pendente' } }
+        ]);
+        if (!ok) return;
+        alert('Ficha 6 registrada. Próxima reclassificação agendada para ' + formatarData(paraISODate(proximaData)) + '.');
+        carregar();
+      }
+    }, [
+      el('p', { class: 'texto-ajuda', texto: 'Reclassificação pendente desde ' + formatarData(pendente.dataPrevista) + '.' }),
+      botaoAutoPreencher,
+      fieldsetCumprimento, fieldsetAlteracoes, fieldsetNovasNecessidades, fieldsetReavaliacao,
+      fieldsetRevisao, fieldsetSituacao, fieldsetDeliberacao, fieldsetProxima,
+      el('button', { class: 'botao botao-sucesso', type: 'submit', texto: 'Registrar Ficha 6' })
+    ]);
+  }
+
+  carregar();
+}
+
+
+// ---------------------------------------------------------------------
+// Reclassificacoes
+// ---------------------------------------------------------------------
+function renderizarReclassificacoes(container) {
+  container.appendChild(el('h2', { texto: 'Reclassificações' }));
+  container.appendChild(el('p', { class: 'texto-ajuda', texto: 'Intervalo de 6 a 12 meses, conforme item 4.4.2.2.4 da Nota Técnica. Pode ser antecipada por alteração significativa no perfil ou nas condições da pessoa.' }));
+
+  const pendentes = DADOS.reclassificacoes.filter(function (r) { return r.status !== 'realizada'; })
+    .sort(function (a, b) { return a.dataPrevista < b.dataPrevista ? -1 : 1; });
+
+  if (!pendentes.length) {
+    container.appendChild(el('p', { class: 'texto-ajuda', texto: 'Nenhuma reclassificação pendente.' }));
+  } else {
+    const tabela = el('table', {}, [
+      el('thead', {}, [el('tr', {}, [el('th', { texto: 'Pessoa' }), el('th', { texto: 'Prazo' }), el('th', { texto: 'Motivo' }), el('th', { texto: 'Situação' }), el('th', { texto: '' })])]),
+      el('tbody', {}, pendentes.map(function (r) {
+        const atrasada = r.dataPrevista < hojeISO();
+        return el('tr', {}, [
+          el('td', {}, [el('a', { href: '#', texto: nomePessoa(r.pplId), onClick: function (ev) { ev.preventDefault(); PESSOA_SELECIONADA = r.pplId; irParaAba('pessoas'); } })]),
+          el('td', { texto: formatarData(r.dataPrevista) }),
+          el('td', { texto: r.motivo === 'extraordinaria' ? 'Extraordinária' : 'Periódica' }),
+          el('td', {}, [badge(atrasada ? 'Atrasada' : 'Pendente', atrasada ? 'badge-vermelho' : 'badge-azul')]),
+          el('td', {}, [botao('Preencher Ficha 6', 'botao-texto', function () {
+            PESSOA_SELECIONADA = r.pplId; irParaAba('pessoas');
+          })])
+        ]);
+      }))
+    ]);
+    container.appendChild(cartao([tabela]));
+  }
+
+  const pessoaSel = campoSelect('Pessoa', DADOS.pessoas.map(function (p) { return { valor: p.id, rotulo: p.nomeSocial || p.nome }; }), { comBranco: true });
+  const justificativa = campoTexto('Justificativa da reclassificação extraordinária', { textarea: true });
+  const dataPrevista = campoTexto('Data prevista', { tipo: 'date', valor: hojeISO() });
+  const areaErro = el('div', {});
+
+  const formExtra = el('form', {
+    class: 'card',
+    onSubmit: async function (ev) {
+      ev.preventDefault();
+      limpar(areaErro);
+      if (!pessoaSel.select.value || !justificativa.input.value) { areaErro.appendChild(mensagemErro('Selecione a pessoa e informe a justificativa.')); return; }
+      const ok = await salvarComAviso([{ colecao: 'reclassificacoes', acao: 'registrou reclassificação extraordinária', registro: { id: uid(), pplId: pessoaSel.select.value, dataPrevista: dataPrevista.input.value || hojeISO(), motivo: 'extraordinaria', justificativa: justificativa.input.value, status: 'pendente' } }]);
+      if (ok) renderizarApp();
+    }
+  }, [
+    el('h3', { texto: 'Registrar reclassificação extraordinária' }),
+    areaErro, pessoaSel.wrap, justificativa.wrap, dataPrevista.wrap,
+    el('button', { class: 'botao botao-secundario', type: 'submit', texto: 'Registrar' })
+  ]);
+  container.appendChild(formExtra);
+}
+
+// ---------------------------------------------------------------------
+// Exportar / importar dados (JSON)
+// ---------------------------------------------------------------------
+function baixarJson(objeto, nomeArquivo) {
+  const blob = new Blob([JSON.stringify(objeto, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: nomeArquivo }, []);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function renderizarDados(container) {
+  container.appendChild(el('h2', { texto: 'Exportar e importar dados' }));
+  container.appendChild(el('p', {
+    class: 'texto-ajuda',
+    texto: 'Os dados ficam no banco central e não dependem deste navegador. A cópia abaixo traz os dados da unidade ' + DADOS.unidade.nome + ', para guardar ou conferir — trate o arquivo como documento sigiloso.'
+  }));
+
+  container.appendChild(cartao([
+    el('h3', { texto: 'Exportar cópia da unidade (.json)' }),
+    botao('Baixar cópia', 'botao-primario', function () {
+      const copia = JSON.parse(JSON.stringify(DADOS));
+      Object.keys(copia).forEach(function (k) {
+        if (Array.isArray(copia[k])) copia[k].forEach(function (r) { delete r._rev; });
+      });
+      baixarJson(copia, 'ctc-sc-' + idUnidade(UNIDADE_ATIVA.nome, UNIDADE_ATIVA.sr) + '-' + hojeISO() + '.json');
+    })
+  ]));
+
+  if (!ehGestor()) {
+    container.appendChild(el('p', { class: 'texto-ajuda', texto: 'Trazer dados da versão antiga (que salvava no navegador) é tarefa do(a) diretor(a), da SR ou do DPP.' }));
+    return;
+  }
+
+  const areaImport = el('div', {});
+  const inputArquivo = el('input', { type: 'file', accept: 'application/json' });
+  const botaoImportar = botao('Importar para o banco', 'botao-primario', function () {
+    limpar(areaImport);
+    const arquivo = inputArquivo.files && inputArquivo.files[0];
+    if (!arquivo) { areaImport.appendChild(mensagemErro('Selecione um arquivo .json primeiro.')); return; }
+    const leitor = new FileReader();
+    leitor.onload = async function () {
+      let backup;
+      try { backup = JSON.parse(leitor.result); } catch (e) {
+        areaImport.appendChild(mensagemErro('Arquivo inválido: ' + e.message)); return;
+      }
+      const nomeNoBackup = backup && backup.unidade && backup.unidade.nome;
+      if (nomeNoBackup && nomeNoBackup !== UNIDADE_ATIVA.nome &&
+          !window.confirm('Este backup é da unidade "' + nomeNoBackup + '", mas os dados vão entrar em "' + UNIDADE_ATIVA.nome + '". Continuar?')) return;
+      const progresso = el('p', { class: 'texto-ajuda', texto: 'Importando...' });
+      areaImport.appendChild(progresso);
+      botaoImportar.disabled = true;
+      try {
+        const r = await importarBackup(backup, function (feitos, total) { progresso.textContent = 'Importando... ' + feitos + ' de ' + total + ' registros.'; });
+        limpar(areaImport);
+        areaImport.appendChild(mensagemOk('Importação concluída: ' + r.importados + ' registros novos' +
+          (r.pulados ? ', ' + r.pulados + ' já estavam no banco (pulados)' : '') +
+          (r.orfaos ? ', ' + r.orfaos + ' ignorados por não terem a pessoa correspondente no backup' : '') + '.'));
+      } catch (e) {
+        console.error(e);
+        areaImport.appendChild(mensagemErro(mensagemDeErroDoBanco(e) + ' O que já foi importado ficou salvo; importe o mesmo arquivo de novo para continuar de onde parou.'));
+      } finally {
+        botaoImportar.disabled = false;
+      }
+    };
+    leitor.readAsText(arquivo);
+  });
+
+  container.appendChild(cartao([
+    el('h3', { texto: 'Trazer dados da versão antiga' }),
+    el('p', { class: 'texto-ajuda', texto: 'Na versão antiga (a que salvava os dados no navegador), abra a aba "Exportar/Importar" e clique em "Baixar backup". Depois selecione esse arquivo aqui. Os registros entram na unidade ' + UNIDADE_ATIVA.nome + '. O que já está no banco é pulado, então importar o mesmo arquivo duas vezes não duplica nada.' }),
+    areaImport,
+    inputArquivo,
+    botaoImportar
+  ]));
+}
+
+// Leva um backup da versao local (localStorage) para o banco, na unidade ativa.
+async function importarBackup(backup, aoProgresso) {
+  const b = Object.assign(dadosPadrao(), backup);
+  const itens = [];
+  let pulados = 0;
+  let orfaos = 0;
+  function idValido(id) { return typeof id === 'string' && id.length > 0 && id.length <= 200 && id.indexOf('/') === -1 && id !== '.' && id !== '..'; }
+  function incluir(colecao, registro) {
+    if (!registro || !idValido(registro.id)) return;
+    if (CACHE[colecao].has(registro.id)) { pulados += 1; return; }
+    const limpo = Object.assign({}, registro);
+    delete limpo._rev;
+    itens.push({ colecao: colecao, acao: 'importou backup da versão local', registro: limpo });
+  }
+  const pessoasConhecidas = new Set();
+  (b.pessoas || []).forEach(function (p) { if (p && idValido(p.id)) pessoasConhecidas.add(p.id); });
+  CACHE.pessoas.forEach(function (p, id) { if (daUnidadeAtiva(p)) pessoasConhecidas.add(id); });
+  function daPessoaConhecida(r) {
+    if (r && pessoasConhecidas.has(r.pplId)) return true;
+    orfaos += 1;
+    return false;
+  }
+
+  // Pessoas antes do que depende delas: as regras conferem se a pessoa e da mesma unidade.
+  if (b.unidade && b.unidade.tipoEstabelecimento) {
+    incluir('unidades', { id: idUnidade(UNIDADE_ATIVA.nome, UNIDADE_ATIVA.sr), nome: UNIDADE_ATIVA.nome, tipoEstabelecimento: b.unidade.tipoEstabelecimento });
+  }
+  (b.membrosCtc || []).forEach(function (m) { incluir('membrosCtc', Object.assign({ removido: false }, m)); });
+  (b.pessoas || []).forEach(function (p) { incluir('pessoas', p); });
+  ['fases', 'pips', 'reclassificacoes'].forEach(function (c) {
+    (b[c] || []).filter(daPessoaConhecida).forEach(function (r) { incluir(c, r); });
+  });
+  Object.keys(LISTA_DA_FICHA).forEach(function (tipo) {
+    const lista = (b[LISTA_DA_FICHA[tipo]] || []).filter(daPessoaConhecida);
+    lista.forEach(function (f, i) {
+      // a ultima ficha de cada pessoa vira a principal (<pplId>_<tipo>); as anteriores
+      // entram com o id original, so para nao se perderem
+      const ultimaDaPessoa = !lista.slice(i + 1).some(function (g) { return g.pplId === f.pplId; });
+      incluir('fichas', Object.assign({}, f, { id: ultimaDaPessoa ? f.pplId + '_' + tipo : f.id, tipo: tipo }));
+    });
+  });
+
+  // Lotes pequenos: as regras leem alguns documentos por registro gravado e o Firestore
+  // limita essas leituras por lote.
+  const TAMANHO_LOTE = 4;
+  for (let i = 0; i < itens.length; i += TAMANHO_LOTE) {
+    await gravarVarios(itens.slice(i, i + TAMANHO_LOTE));
+    aoProgresso(Math.min(i + TAMANHO_LOTE, itens.length), itens.length);
+  }
+  reconstruirDados();
+  return { importados: itens.length, pulados: pulados, orfaos: orfaos };
+}
+
+// ---------------------------------------------------------------------
+// Contas (aprovacao por DIR, SR e DPP)
+// ---------------------------------------------------------------------
+// Mesma alcada do firestore.rules: o DIR aprova membros da propria unidade; a SR,
+// diretores(as) e membros da regional; o DPP, qualquer conta (inclusive SR e DPP).
+function podeDecidirConta(c) {
+  if (!PERFIL || c.uid === USUARIO.uid) return false;
+  const alvo = c.perfil || c.perfilSolicitado;
+  if (PERFIL.perfil === 'DPP') return true;
+  if (PERFIL.perfil === 'SR') return c.sr === PERFIL.sr && (alvo === 'MEMBRO' || alvo === 'DIR');
+  if (PERFIL.perfil === 'DIR') return c.sr === PERFIL.sr && c.unidade === PERFIL.unidade && alvo === 'MEMBRO';
+  return false;
+}
+
+function contasPendentes() {
+  return Array.from(CONTAS.values()).filter(function (c) { return c.status === 'PENDENTE' && podeDecidirConta(c); }).length;
+}
+
+async function decidirConta(c, mudancas, pergunta) {
+  if (pergunta && !window.confirm(pergunta)) return;
+  try {
+    if (mudancas === null) await deleteDoc(doc(db, 'usuarios', c.uid));
+    else await updateDoc(doc(db, 'usuarios', c.uid), Object.assign({}, mudancas, { atualizadoPor: USUARIO.uid, atualizadoEm: serverTimestamp() }));
+  } catch (e) {
+    console.error(e);
+    alert(mensagemDeErroDoBanco(e));
+  }
+}
+
+function renderizarContas(container) {
+  container.appendChild(el('h2', { texto: 'Contas de acesso' }));
+  const alcada = {
+    DIR: 'Você aprova os membros da CTC da sua unidade.',
+    SR: 'Você aprova diretores(as) e membros da CTC das unidades da regional ' + PERFIL.sr + '. Contas de SR e DPP são aprovadas pelo DPP.',
+    DPP: 'Você aprova qualquer conta, inclusive de SR e DPP.'
+  };
+  container.appendChild(el('p', { class: 'texto-ajuda', texto: alcada[PERFIL.perfil] + ' Antes de aprovar, confira se a pessoa é mesmo servidora da unidade e do cargo informados. Recusar apaga só o pedido; suspender bloqueia o acesso sem apagar nada.' }));
+
+  const lista = Array.from(CONTAS.values()).sort(function (a, b) {
+    const pa = a.status === 'PENDENTE' ? 0 : 1;
+    const pb = b.status === 'PENDENTE' ? 0 : 1;
+    return pa !== pb ? pa - pb : (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
+  });
+  if (!lista.length) {
+    container.appendChild(el('p', { class: 'texto-ajuda', texto: 'Nenhuma conta no seu alcance.' }));
+    return;
+  }
+  const situacoes = {
+    PENDENTE: badge('Aguardando aprovação', 'badge-vermelho'),
+    ATIVO: badge('Ativa', 'badge-verde'),
+    SUSPENSO: badge('Suspensa', 'badge-cinza')
+  };
+  const tabela = el('table', {}, [
+    el('thead', {}, [el('tr', {}, [
+      el('th', { texto: 'Nome' }), el('th', { texto: 'E-mail' }), el('th', { texto: 'Matrícula' }), el('th', { texto: 'Perfil' }),
+      el('th', { texto: 'Cargo' }), el('th', { texto: 'Unidade / regional' }), el('th', { texto: 'Situação' }), el('th', { texto: '' })
+    ])]),
+    el('tbody', {}, lista.map(function (c) {
+      const alvo = c.perfil || c.perfilSolicitado;
+      const acoes = [];
+      if (c.uid === USUARIO.uid) acoes.push(el('span', { class: 'texto-ajuda', texto: '(você)' }));
+      else if (podeDecidirConta(c)) {
+        if (c.status === 'PENDENTE') {
+          acoes.push(botao('Aprovar', 'botao-texto', function () {
+            decidirConta(c, { perfil: c.perfilSolicitado, status: 'ATIVO' }, 'Aprovar ' + c.nome + ' como ' + ROTULOS_PERFIL[c.perfilSolicitado] + '?');
+          }));
+          acoes.push(botao('Recusar', 'botao-texto', function () {
+            decidirConta(c, null, 'Recusar o pedido de ' + c.nome + '? O pedido é apagado.');
+          }));
+        } else if (c.status === 'ATIVO') {
+          acoes.push(botao('Suspender', 'botao-texto', function () {
+            decidirConta(c, { status: 'SUSPENSO' }, 'Suspender o acesso de ' + c.nome + '?');
+          }));
+        } else if (c.status === 'SUSPENSO') {
+          acoes.push(botao('Reativar', 'botao-texto', function () {
+            decidirConta(c, { status: 'ATIVO' }, 'Reativar o acesso de ' + c.nome + '?');
+          }));
+        }
+      }
+      return el('tr', {}, [
+        el('td', { texto: c.nome || '—' }), el('td', { texto: c.email || '—' }), el('td', { texto: c.matricula || '—' }),
+        el('td', { texto: ROTULOS_PERFIL[alvo] || alvo || '—' }), el('td', { texto: c.cargo ? rotuloCargo(c.cargo) : '—' }),
+        el('td', { texto: c.unidade ? c.unidade + ' (' + c.sr + ')' : (c.sr || 'Estado') }),
+        el('td', {}, [situacoes[c.status] ? situacoes[c.status].cloneNode(true) : (c.status || '—')]),
+        el('td', {}, acoes)
+      ]);
+    }))
+  ]);
+  container.appendChild(cartao([tabela]));
+}
+
+// ---------------------------------------------------------------------
+// Login, cadastro e aprovacao
+// ---------------------------------------------------------------------
+let ESCUTA_PERFIL = null;
+let CADASTRO_EM_ANDAMENTO = false;
+
+function mensagemDeErroDeLogin(e) {
+  const codigo = e && e.code;
+  if (codigo === 'auth/invalid-credential' || codigo === 'auth/wrong-password' || codigo === 'auth/user-not-found') return 'E-mail ou senha incorretos.';
+  if (codigo === 'auth/too-many-requests') return 'Muitas tentativas seguidas. Aguarde alguns minutos ou use "Esqueci minha senha".';
+  if (codigo === 'auth/email-already-in-use') return 'Já existe uma conta com este e-mail. Use "Entrar" ou "Esqueci minha senha".';
+  if (codigo === 'auth/weak-password') return 'A senha precisa ter pelo menos 6 caracteres.';
+  if (codigo === 'auth/invalid-email') return 'E-mail inválido.';
+  if (codigo === 'auth/network-request-failed') return 'Sem conexão com o servidor. Verifique a internet.';
+  return mensagemDeErroDoBanco(e);
+}
+
+function mostrarTelaAcesso(conteudo) {
+  document.getElementById('area-app').style.display = 'none';
+  const tela = document.getElementById('tela-acesso');
+  tela.style.display = 'block';
+  limpar(tela);
+  tela.appendChild(el('div', { class: 'marca-grande' }, [el('span', { class: 'sigla-vermelha', texto: 'CTC' }), el('span', { class: 'sigla-verde', texto: 'SC' })]));
+  if (EM_TESTE) tela.appendChild(el('p', { class: 'erro-mensagem', texto: 'Modo de teste: usando os emuladores locais, não o banco real.' }));
+  conteudo.forEach(function (c) { tela.appendChild(c); });
+}
+
+function mostrarApp() {
+  document.getElementById('tela-acesso').style.display = 'none';
+  document.getElementById('area-app').style.display = 'block';
+}
+
+function mostrarLogin() {
+  const email = campoTexto('E-mail', { tipo: 'email' });
+  const senha = campoTexto('Senha', { tipo: 'password' });
+  email.input.setAttribute('autocomplete', 'username');
+  senha.input.setAttribute('autocomplete', 'current-password');
+  const area = el('div', {});
+  const form = el('form', {
+    class: 'card',
+    onSubmit: async function (ev) {
+      ev.preventDefault();
+      limpar(area);
+      try {
+        await signInWithEmailAndPassword(auth, email.input.value.trim(), senha.input.value);
+      } catch (e) {
+        area.appendChild(mensagemErro(mensagemDeErroDeLogin(e)));
+      }
+    }
+  }, [
+    el('h2', { texto: 'Entrar' }),
+    area, email.wrap, senha.wrap,
+    el('button', { class: 'botao botao-primario', type: 'submit', texto: 'Entrar' }),
+    el('div', {}, [
+      botao('Esqueci minha senha', 'botao-texto', async function () {
+        limpar(area);
+        const endereco = email.input.value.trim();
+        if (!endereco) { area.appendChild(mensagemErro('Digite seu e-mail acima e clique de novo em "Esqueci minha senha".')); return; }
+        try {
+          await sendPasswordResetEmail(auth, endereco);
+          area.appendChild(mensagemOk('Se houver conta com este e-mail, enviamos um link para criar uma nova senha. Confira também a caixa de spam.'));
+        } catch (e) {
+          area.appendChild(mensagemErro(mensagemDeErroDeLogin(e)));
+        }
+      }),
+      botao('Criar conta', 'botao-texto', function () { mostrarCadastro(); })
+    ])
+  ]);
+  mostrarTelaAcesso([form]);
+}
+
+// Formulario de cadastro. jaLogado: a conta de login existe mas o cadastro nao foi
+// concluido (ex.: a gravacao do cadastro falhou) - so pede os dados, sem e-mail/senha.
+function formularioCadastro(jaLogado) {
+  const nome = campoTexto('Nome completo');
+  const matricula = campoTexto('Matrícula');
+  const email = jaLogado ? null : campoTexto('E-mail institucional', { tipo: 'email' });
+  const senha = jaLogado ? null : campoTexto('Senha (mínimo 6 caracteres)', { tipo: 'password' });
+  if (senha) senha.input.setAttribute('autocomplete', 'new-password');
+  const perfil = campoSelect('Perfil de acesso', Object.keys(ROTULOS_PERFIL).map(function (k) { return { valor: k, rotulo: ROTULOS_PERFIL[k] }; }), { comBranco: true });
+  const cargo = campoSelect('Cargo / área (define qual ficha você preenche)', CARGOS_CONTA, { comBranco: true });
+  const regional = campoSelect('Superintendência Regional', REGIONAIS_SC.map(function (r) { return { valor: r.sigla, rotulo: r.nome }; }), { comBranco: true });
+  const unidade = campoSelect('Unidade', [], { comBranco: true });
+  const unidadeManual = campoTexto('Nome da unidade (como deve aparecer nos documentos)');
+
+  function atualizar() {
+    const p = perfil.select.value;
+    const comUnidade = p === 'MEMBRO' || p === 'DIR';
+    cargo.wrap.style.display = p === 'MEMBRO' ? 'block' : 'none';
+    regional.wrap.style.display = p && p !== 'DPP' ? 'block' : 'none';
+    unidade.wrap.style.display = comUnidade ? 'block' : 'none';
+    unidadeManual.wrap.style.display = comUnidade && unidade.select.value === OPCAO_OUTRA_UNIDADE ? 'block' : 'none';
+  }
+  function preencherUnidades() {
+    limpar(unidade.select);
+    const sigla = regional.select.value;
+    unidade.select.appendChild(el('option', { value: '', texto: sigla ? 'Escolha a unidade...' : 'Escolha primeiro a regional' }));
+    if (sigla) {
+      unidadesDaRegional(sigla).forEach(function (n) { unidade.select.appendChild(el('option', { value: n, texto: n })); });
+      unidade.select.appendChild(el('option', { value: OPCAO_OUTRA_UNIDADE, texto: '+ Minha unidade não está na lista' }));
+    }
+    atualizar();
+  }
+  perfil.select.addEventListener('change', atualizar);
+  regional.select.addEventListener('change', preencherUnidades);
+  unidade.select.addEventListener('change', atualizar);
+  preencherUnidades();
+
+  const area = el('div', {});
+  const enviar = el('button', { class: 'botao botao-primario', type: 'submit', texto: 'Enviar cadastro' });
+  return el('form', {
+    class: 'card',
+    onSubmit: async function (ev) {
+      ev.preventDefault();
+      limpar(area);
+      const p = perfil.select.value;
+      const comUnidade = p === 'MEMBRO' || p === 'DIR';
+      const nomeUnidade = unidade.select.value === OPCAO_OUTRA_UNIDADE ? unidadeManual.input.value.trim() : unidade.select.value;
+      const faltando = [];
+      if (!nome.input.value.trim()) faltando.push('nome');
+      if (!p) faltando.push('perfil');
+      if (p === 'MEMBRO' && !cargo.select.value) faltando.push('cargo');
+      if (p && p !== 'DPP' && !regional.select.value) faltando.push('regional');
+      if (comUnidade && !nomeUnidade) faltando.push('unidade');
+      if (!jaLogado && (!email.input.value.trim() || !senha.input.value)) faltando.push('e-mail e senha');
+      if (faltando.length) { area.appendChild(mensagemErro('Preencha: ' + faltando.join(', ') + '.')); return; }
+
+      enviar.disabled = true;
+      CADASTRO_EM_ANDAMENTO = true;
+      try {
+        if (!auth.currentUser) await createUserWithEmailAndPassword(auth, email.input.value.trim(), senha.input.value);
+        await setDoc(doc(db, 'usuarios', auth.currentUser.uid), {
+          nome: nome.input.value.trim(),
+          matricula: matricula.input.value.trim(),
+          email: auth.currentUser.email,
+          perfilSolicitado: p,
+          perfil: null,
+          cargo: p === 'MEMBRO' ? cargo.select.value : null,
+          sr: p === 'DPP' ? null : regional.select.value,
+          unidade: comUnidade ? nomeUnidade : null,
+          status: 'PENDENTE',
+          criadoEm: serverTimestamp()
+        });
+        // a escuta do perfil leva para a tela "aguardando aprovacao"
+      } catch (e) {
+        console.error(e);
+        area.appendChild(mensagemErro(mensagemDeErroDeLogin(e)));
+        enviar.disabled = false;
+      } finally {
+        CADASTRO_EM_ANDAMENTO = false;
+      }
+    }
+  }, [
+    el('h2', { texto: jaLogado ? 'Concluir cadastro' : 'Criar conta' }),
+    el('p', { class: 'texto-ajuda', texto: 'Depois de enviar, a conta fica aguardando aprovação: membros pelo(a) diretor(a) da unidade, diretores(as) pela SR, e SR/DPP pelo DPP.' }),
+    area,
+    nome.wrap, matricula.wrap,
+    email ? email.wrap : null, senha ? senha.wrap : null,
+    perfil.wrap, cargo.wrap, regional.wrap, unidade.wrap, unidadeManual.wrap,
+    enviar
+  ]);
+}
+
+function mostrarCadastro() {
+  mostrarTelaAcesso([formularioCadastro(false), botao('← Já tenho conta', 'botao-texto', function () { mostrarLogin(); })]);
+}
+
+function mostrarCompletarCadastro() {
+  mostrarTelaAcesso([
+    el('p', { class: 'texto-ajuda', texto: 'Você entrou como ' + USUARIO.email + ', mas o cadastro desta conta não foi concluído.' }),
+    formularioCadastro(true),
+    botao('Sair', 'botao-texto', function () { signOut(auth); })
+  ]);
+}
+
+function mostrarAguardando() {
+  const quemAprova = {
+    MEMBRO: 'do(a) diretor(a) da sua unidade, da SR ou do DPP',
+    DIR: 'da SR da sua regional ou do DPP',
+    SR: 'do DPP',
+    DPP: 'do DPP'
+  };
+  const pendente = PERFIL.status === 'PENDENTE';
+  mostrarTelaAcesso([cartao([
+    el('h2', { texto: pendente ? 'Cadastro enviado' : 'Acesso suspenso' }),
+    el('p', { texto: pendente
+      ? 'Sua conta aguarda a aprovação ' + (quemAprova[PERFIL.perfilSolicitado] || 'do DPP') + '. Esta tela se atualiza sozinha quando a conta for aprovada.'
+      : 'Seu acesso foi suspenso. Procure o(a) diretor(a) da unidade, a SR ou o DPP.' }),
+    el('p', { class: 'texto-ajuda', texto: PERFIL.nome + ' · ' + (ROTULOS_PERFIL[PERFIL.perfil || PERFIL.perfilSolicitado] || '') +
+      (PERFIL.cargo ? ' · ' + rotuloCargo(PERFIL.cargo) : '') + (PERFIL.unidade ? ' · ' + PERFIL.unidade : '') + (PERFIL.sr ? ' (' + PERFIL.sr + ')' : '') }),
+    botao('Sair', 'botao-secundario', function () { signOut(auth); })
+  ])]);
+}
+
+// ---------------------------------------------------------------------
+// Topo: unidade ativa (SR/DPP), usuario logado, aviso de atualizacao
+// ---------------------------------------------------------------------
+function unidadesNoAlcance() {
+  const regionais = PERFIL.perfil === 'DPP' ? REGIONAIS_SC : REGIONAIS_SC.filter(function (r) { return r.sigla === PERFIL.sr; });
+  const lista = [];
+  regionais.forEach(function (r) { r.unidades.forEach(function (n) { lista.push({ nome: n, sr: r.sigla }); }); });
+  // unidades fora da lista oficial que ja tem registros ("minha unidade nao esta na lista")
+  ['unidades', 'pessoas', 'membrosCtc'].forEach(function (c) {
+    CACHE[c].forEach(function (d) {
+      if (!d.unidade || !regionais.some(function (r) { return r.sigla === d.sr; })) return;
+      if (!lista.some(function (u) { return u.nome === d.unidade && u.sr === d.sr; })) lista.push({ nome: d.unidade, sr: d.sr });
+    });
+  });
+  return lista;
+}
+
+function montarTopo() {
+  const area = document.getElementById('usuario-topo');
+  limpar(area);
+  if (ehRegionalOuDPP()) {
+    const seletor = el('select', { title: 'Unidade' });
+    seletor.appendChild(el('option', { value: '', texto: PERFIL.perfil === 'DPP' ? 'Todas as unidades (painel estadual)' : 'Todas as unidades da ' + PERFIL.sr }));
+    const unidades = unidadesNoAlcance();
+    const regionais = PERFIL.perfil === 'DPP' ? REGIONAIS_SC : REGIONAIS_SC.filter(function (r) { return r.sigla === PERFIL.sr; });
+    regionais.forEach(function (r) {
+      const grupo = el('optgroup', { label: r.sigla });
+      unidades.filter(function (u) { return u.sr === r.sigla; })
+        .sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt-BR'); })
+        .forEach(function (u) { grupo.appendChild(el('option', { value: u.sr + '|' + u.nome, texto: u.nome })); });
+      seletor.appendChild(grupo);
+    });
+    seletor.value = UNIDADE_ATIVA ? UNIDADE_ATIVA.sr + '|' + UNIDADE_ATIVA.nome : '';
+    seletor.addEventListener('change', function () {
+      const v = seletor.value;
+      escolherUnidade(v ? { sr: v.slice(0, v.indexOf('|')), nome: v.slice(v.indexOf('|') + 1) } : null);
+    });
+    area.appendChild(el('span', {}, ['Unidade: ', seletor]));
+  }
+  area.appendChild(el('span', { texto: PERFIL.nome + ' · ' + (PERFIL.perfil === 'MEMBRO' && PERFIL.cargo ? rotuloCargo(PERFIL.cargo) : ROTULOS_PERFIL[PERFIL.perfil]) }));
+  area.appendChild(botao('Sair', 'botao-texto', function () { signOut(auth); }));
+}
+
+function escolherUnidade(unidade) {
+  UNIDADE_ATIVA = unidade;
+  PESSOA_SELECIONADA = null;
+  FILTRO_FASE = null;
+  escutarFichas();
+  reconstruirDados();
+  montarTopo();
+  irParaAba(unidade || ABA_ATUAL === 'contas' ? ABA_ATUAL : 'painel');
+}
+
+function mostrarAvisoAtualizacao() {
+  const aviso = document.getElementById('aviso-atualizacao');
+  limpar(aviso);
+  aviso.appendChild(el('span', { texto: 'Outra pessoa alterou dados desta unidade. Atualize a tela para ver (o que você digitou e ainda não salvou será perdido).' }));
+  aviso.appendChild(botao('Atualizar tela', 'botao-secundario', function () { renderizarApp(); }));
+  aviso.style.display = 'flex';
+}
+
+function esconderAvisoAtualizacao() {
+  document.getElementById('aviso-atualizacao').style.display = 'none';
+}
+
+// ---------------------------------------------------------------------
+// Escutas do banco (onSnapshot) e sessao
+// ---------------------------------------------------------------------
+// Filtros iguais ao alcance das regras: o Firestore recusa consultas mais amplas
+// do que o perfil pode ler.
+function filtrosDoAlcance() {
+  if (PERFIL.perfil === 'DPP') return [];
+  if (PERFIL.perfil === 'SR') return [where('sr', '==', PERFIL.sr)];
+  return [where('unidade', '==', PERFIL.unidade), where('sr', '==', PERFIL.sr)];
+}
+
+function escutar(colecao, filtros) {
+  return onSnapshot(query(collection(db, colecao), ...filtros), function (snap) {
+    let deOutraPessoa = false;
+    snap.docChanges().forEach(function (m) {
+      if (m.type === 'removed') { CACHE[colecao].delete(m.doc.id); return; }
+      // 'estimate': gravacao propria ainda sem a hora do servidor vem com a hora local
+      // (so para exibir e ordenar - updatedAt/createdAt nunca sao regravados do cache)
+      const d = m.doc.data({ serverTimestamps: 'estimate' });
+      CACHE[colecao].set(m.doc.id, d);
+      if (d.updatedBy !== USUARIO.uid) deOutraPessoa = true;
+    });
+    const primeiraCarga = !COLECOES_CARREGADAS.has(colecao);
+    COLECOES_CARREGADAS.add(colecao);
+    aoMudarDados(primeiraCarga ? false : deOutraPessoa, primeiraCarga);
+  }, function (erro) {
+    console.error('Erro ao escutar ' + colecao, erro);
+    const aviso = document.getElementById('aviso-atualizacao');
+    limpar(aviso);
+    aviso.appendChild(el('span', { texto: 'Não foi possível carregar os dados (' + colecao + '): ' + erro.message + '. Recarregue a página.' }));
+    aviso.style.display = 'flex';
+  });
+}
+
+// Telas com formulario nao sao redesenhadas sozinhas (perderiam o que esta sendo
+// digitado): mudancas de outra pessoa mostram o aviso "Atualizar tela".
+function aoMudarDados(deOutraPessoa, primeiraCarga) {
+  reconstruirDados();
+  if (COLECOES_CARREGADAS.size < COLECOES.length) return;
+  if (primeiraCarga) { montarTopo(); renderizarApp(); return; }
+  if (ABA_ATUAL === 'painel') renderizarApp();
+  else if (deOutraPessoa) mostrarAvisoAtualizacao();
+}
+
+function escutarFichas() {
+  if (ESCUTA_FICHAS) ESCUTA_FICHAS();
+  ESCUTA_FICHAS = null;
+  CACHE.fichas.clear();
+  if (!UNIDADE_ATIVA) { COLECOES_CARREGADAS.add('fichas'); return; }
+  COLECOES_CARREGADAS.delete('fichas');
+  ESCUTA_FICHAS = escutar('fichas', [where('unidade', '==', UNIDADE_ATIVA.nome), where('sr', '==', UNIDADE_ATIVA.sr)]);
+}
+
+function escutarContas() {
+  if (!ehGestor()) return;
+  ESCUTAS.push(onSnapshot(query(collection(db, 'usuarios'), ...filtrosDoAlcance()), function (snap) {
+    CONTAS.clear();
+    snap.forEach(function (d) { CONTAS.set(d.id, Object.assign({ uid: d.id }, d.data())); });
+    montarNavegacao();
+    if (ABA_ATUAL === 'contas' && COLECOES_CARREGADAS.size === COLECOES.length) renderizarApp();
+  }, function (erro) { console.error('Erro ao escutar contas', erro); }));
+}
+
+function pararEscutas() {
+  ESCUTAS.forEach(function (cancelar) { cancelar(); });
+  ESCUTAS = [];
+  if (ESCUTA_FICHAS) { ESCUTA_FICHAS(); ESCUTA_FICHAS = null; }
+  COLECOES.forEach(function (c) { CACHE[c].clear(); });
+  CONTAS.clear();
+  COLECOES_CARREGADAS = new Set();
+  UNIDADE_ATIVA = null;
+  PESSOA_SELECIONADA = null;
+  FILTRO_FASE = null;
+  ABA_ATUAL = 'painel';
+  DADOS = dadosPadrao();
+}
+
+function iniciarSessao() {
+  pararEscutas();
+  if (!PERFIL) { if (!CADASTRO_EM_ANDAMENTO) mostrarCompletarCadastro(); return; }
+  if (PERFIL.status !== 'ATIVO') { mostrarAguardando(); return; }
+  if (PERFIL.perfil === 'MEMBRO' || PERFIL.perfil === 'DIR') UNIDADE_ATIVA = { nome: PERFIL.unidade, sr: PERFIL.sr };
+  const filtros = filtrosDoAlcance();
+  COLECOES.filter(function (c) { return c !== 'fichas'; }).forEach(function (c) { ESCUTAS.push(escutar(c, filtros)); });
+  escutarFichas();
+  escutarContas();
+  mostrarApp();
+  montarTopo();
+  montarNavegacao();
+  renderizarApp();
+}
+
+// ---------------------------------------------------------------------
+// Inicializacao
+// ---------------------------------------------------------------------
+onAuthStateChanged(auth, function (usuario) {
+  if (ESCUTA_PERFIL) { ESCUTA_PERFIL(); ESCUTA_PERFIL = null; }
+  pararEscutas();
+  USUARIO = usuario;
+  PERFIL = null;
+  if (!usuario) { mostrarLogin(); return; }
+  if (!CADASTRO_EM_ANDAMENTO) mostrarTelaAcesso([el('p', { class: 'texto-ajuda', texto: 'Carregando sua conta...' })]);
+  let primeiraLeitura = true;
+  ESCUTA_PERFIL = onSnapshot(doc(db, 'usuarios', usuario.uid), function (s) {
+    const novo = s.exists() ? s.data() : null;
+    const mudouAcesso = primeiraLeitura || !novo || !PERFIL || novo.status !== PERFIL.status || novo.perfil !== PERFIL.perfil ||
+      novo.unidade !== PERFIL.unidade || novo.sr !== PERFIL.sr || novo.cargo !== PERFIL.cargo;
+    primeiraLeitura = false;
+    PERFIL = novo;
+    if (mudouAcesso) iniciarSessao();
+  }, function (erro) {
+    console.error(erro);
+    mostrarTelaAcesso([mensagemErro('Não foi possível ler sua conta: ' + erro.message), botao('Sair', 'botao-secundario', function () { signOut(auth); })]);
+  });
+});
+</script>
+</body>
+</html>

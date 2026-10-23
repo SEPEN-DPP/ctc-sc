@@ -1,10 +1,232 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Provisorio: banco fechado para todos ate as regras por perfil (etapa 5)
-    // serem escritas e testadas no emulador. Nada le nem grava enquanto isso.
-    match /{document=**} {
-      allow read, write: if false;
+    function autenticado() { return request.auth != null; }
+    function eu() { return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data; }
+    function ativo(p) { return p.status == 'ATIVO'; }
+
+    // Perfis: MEMBRO (membro da CTC, com cargo/area) e DIR (diretor(a), preside a CTC)
+    // ficam presos a uma unidade; SR a uma regional; DPP ve o estado todo.
+    function alcanca(p, d) {
+      return ativo(p) && (
+        p.perfil == 'DPP'
+        || (p.perfil == 'SR' && d.sr == p.sr)
+        || (p.perfil in ['MEMBRO', 'DIR'] && d.unidade == p.unidade && d.sr == p.sr));
+    }
+    function gestor(p) { return p.perfil in ['DIR', 'SR', 'DPP']; }
+    function regionalOuDPP(p) { return p.perfil in ['SR', 'DPP']; }
+
+    // Fichas 1-4: cada area tecnica edita so a propria; SR e DPP editam todas.
+    // Mesma tabela do index.html (FICHA_DO_CARGO).
+    function fichaDoCargo(c) {
+      return c == 'assistente_social' ? 'servico_social'
+        : c == 'psicologo' ? 'psicologia'
+        : c in ['psiquiatra', 'profissional_saude'] ? 'saude'
+        : c == 'policial_penal' ? 'policia_penal'
+        : 'nenhuma';
+    }
+    function podeEditarFicha(p, tipo) {
+      return regionalOuDPP(p) || (p.perfil == 'MEMBRO' && fichaDoCargo(p.get('cargo', '')) == tipo);
+    }
+
+    // ---------------------------------------------------------------
+    // Contas
+    // ---------------------------------------------------------------
+    // Autocadastro: entra PENDENTE, sem perfil; perfilSolicitado so vira perfil quando
+    // alguem com alcada aprova. O DIR aprova MEMBRO da propria unidade; a SR aprova
+    // MEMBRO e DIR da propria regional; o DPP aprova qualquer um (inclusive SR e DPP).
+    // O primeiro DPP e ativado direto no Console do Firebase.
+    function cadastroOk(c) {
+      return c.keys().hasOnly(['nome', 'matricula', 'email', 'perfilSolicitado', 'perfil', 'cargo', 'unidade', 'sr', 'status', 'criadoEm'])
+        && c.keys().hasAll(['nome', 'matricula', 'email', 'perfilSolicitado', 'perfil', 'cargo', 'unidade', 'sr', 'status', 'criadoEm'])
+        && c.status == 'PENDENTE' && c.perfil == null
+        && c.email == request.auth.token.email
+        && c.criadoEm == request.time
+        && c.nome is string && c.nome.size() > 0 && c.nome.size() <= 120
+        && c.matricula is string && c.matricula.size() <= 40
+        && (
+          (c.perfilSolicitado == 'MEMBRO'
+            && c.cargo in ['chefe_de_servico', 'psiquiatra', 'psicologo', 'assistente_social', 'profissional_saude', 'policial_penal', 'outra_area_tecnica']
+            && regionalValida(c.sr) && unidadeValida(c.unidade))
+          || (c.perfilSolicitado == 'DIR' && c.cargo == null && regionalValida(c.sr) && unidadeValida(c.unidade))
+          || (c.perfilSolicitado == 'SR' && c.cargo == null && regionalValida(c.sr) && c.unidade == null)
+          || (c.perfilSolicitado == 'DPP' && c.cargo == null && c.sr == null && c.unidade == null));
+    }
+    function regionalValida(sr) { return sr in ['SR01', 'SR02', 'SR03', 'SR04', 'SR05', 'SR06', 'SR07', 'SR08']; }
+    function unidadeValida(u) { return u is string && u.size() > 0 && u.size() <= 150; }
+    // Quem le a lista de contas: DIR as da unidade, SR as da regional, DPP todas.
+    function leContas(p, c) {
+      return ativo(p) && (
+        p.perfil == 'DPP'
+        || (p.perfil == 'SR' && c.sr == p.sr)
+        || (p.perfil == 'DIR' && c.sr == p.sr && c.unidade == p.unidade));
+    }
+    function alcadaSobre(p, c) {
+      let alvo = c.perfil != null ? c.perfil : c.perfilSolicitado;
+      return ativo(p) && (
+        (p.perfil == 'SR' && c.sr == p.sr && alvo in ['MEMBRO', 'DIR'])
+        || (p.perfil == 'DIR' && c.sr == p.sr && c.unidade == p.unidade && alvo == 'MEMBRO'));
+    }
+    // Aprovar (PENDENTE -> ATIVO com o perfil pedido), suspender ou reativar; nada mais muda.
+    function decisaoOk() {
+      let n = request.resource.data;
+      let a = resource.data;
+      return n.diff(a).affectedKeys().hasOnly(['perfil', 'status', 'atualizadoPor', 'atualizadoEm'])
+        && n.atualizadoPor == request.auth.uid && n.atualizadoEm == request.time
+        && ((a.status == 'PENDENTE' && n.status == 'ATIVO' && n.perfil == a.perfilSolicitado)
+          || (a.status == 'ATIVO' && n.status == 'SUSPENSO' && n.perfil == a.perfil)
+          || (a.status == 'SUSPENSO' && n.status == 'ATIVO' && n.perfil == a.perfil));
+    }
+    function ehDPP() { return autenticado() && ativo(eu()) && eu().perfil == 'DPP'; }
+
+    match /usuarios/{uid} {
+      allow read: if autenticado() && (request.auth.uid == uid || leContas(eu(), resource.data));
+      allow create: if autenticado() && request.auth.uid == uid && cadastroOk(request.resource.data);
+      allow update: if ehDPP() && request.auth.uid != uid;
+      allow delete: if ehDPP() && request.auth.uid != uid;
+      allow update: if autenticado() && alcadaSobre(eu(), resource.data) && decisaoOk();
+      allow delete: if autenticado() && alcadaSobre(eu(), resource.data) && resource.data.status == 'PENDENTE';
+    }
+
+    // ---------------------------------------------------------------
+    // Registros da CTC
+    // ---------------------------------------------------------------
+    // Toda gravacao:
+    //  - leva rev = rev anterior + 1 (quem salva em cima de uma versao velha e recusado);
+    //  - leva updatedBy = quem esta logado e updatedAt = hora do servidor;
+    //  - nao muda unidade, sr, createdBy nem createdAt;
+    //  - so e aceita se, no MESMO lote, for criado <colecao>/<id>/historico/<rev>.
+    // Nada e apagado (delete: false) e o historico nunca e editado nem apagado.
+    function historicoGravado(col, id, rev) {
+      return existsAfter(/databases/$(database)/documents/$(col)/$(id)/historico/$(string(rev)));
+    }
+    function criacaoOk(col, id, p) {
+      let n = request.resource.data;
+      return alcanca(p, n)
+        && n.id == id
+        && n.unidade is string && n.unidade.size() > 0 && n.sr is string
+        && n.rev == 1
+        && n.createdBy == request.auth.uid && n.createdAt == request.time
+        && n.updatedBy == request.auth.uid && n.updatedAt == request.time
+        && historicoGravado(col, id, 1);
+    }
+    function atualizacaoOk(col, id, p) {
+      let n = request.resource.data;
+      let a = resource.data;
+      return alcanca(p, a)
+        && n.id == a.id && n.unidade == a.unidade && n.sr == a.sr
+        && n.rev == a.rev + 1
+        && n.createdBy == a.createdBy && n.createdAt == a.createdAt
+        && n.updatedBy == request.auth.uid && n.updatedAt == request.time
+        && historicoGravado(col, id, n.rev);
+    }
+    // Registros ligados a uma pessoa: a pessoa existe (ou nasce no mesmo lote) na mesma unidade.
+    function daPessoa(n) {
+      let pessoa = getAfter(/databases/$(database)/documents/pessoas/$(n.pplId)).data;
+      return n.pplId is string && pessoa.unidade == n.unidade && pessoa.sr == n.sr;
+    }
+    function mesmaPessoa() { return request.resource.data.pplId == resource.data.pplId; }
+
+    // Historico: criado so junto com a gravacao do registro (mesmo rev, mesma hora, mesmo autor).
+    function historicoOk(col, id, rev) {
+      let h = request.resource.data;
+      let pai = getAfter(/databases/$(database)/documents/$(col)/$(id)).data;
+      return autenticado()
+        && h.autor == request.auth.uid && h.em == request.time && h.rev == int(rev)
+        && pai.rev == int(rev) && pai.updatedBy == request.auth.uid && pai.updatedAt == request.time;
+    }
+    function historicoLeitura(col, id) {
+      return autenticado() && alcanca(eu(), get(/databases/$(database)/documents/$(col)/$(id)).data);
+    }
+
+    // Tipo de estabelecimento da unidade e composicao da CTC: DIR, SR e DPP.
+    match /unidades/{id} {
+      allow read: if autenticado() && alcanca(eu(), resource.data);
+      allow create: if autenticado() && gestor(eu()) && criacaoOk('unidades', id, eu())
+        && request.resource.data.nome == request.resource.data.unidade;
+      allow update: if autenticado() && gestor(eu()) && atualizacaoOk('unidades', id, eu())
+        && request.resource.data.nome == resource.data.nome;
+      allow delete: if false;
+      match /historico/{rev} {
+        allow read: if historicoLeitura('unidades', id);
+        allow create: if historicoOk('unidades', id, rev);
+        allow update, delete: if false;
+      }
+    }
+    match /membrosCtc/{id} {
+      allow read: if autenticado() && alcanca(eu(), resource.data);
+      allow create: if autenticado() && gestor(eu()) && criacaoOk('membrosCtc', id, eu());
+      allow update: if autenticado() && gestor(eu()) && atualizacaoOk('membrosCtc', id, eu());
+      allow delete: if false;
+      match /historico/{rev} {
+        allow read: if historicoLeitura('membrosCtc', id);
+        allow create: if historicoOk('membrosCtc', id, rev);
+        allow update, delete: if false;
+      }
+    }
+
+    // Pessoas, fases, PIP (Ficha 5) e reclassificacoes (Ficha 6): trabalho colegiado,
+    // qualquer conta ativa da unidade (e SR/DPP).
+    match /pessoas/{id} {
+      allow read: if autenticado() && alcanca(eu(), resource.data);
+      allow create: if autenticado() && criacaoOk('pessoas', id, eu());
+      allow update: if autenticado() && atualizacaoOk('pessoas', id, eu());
+      allow delete: if false;
+      match /historico/{rev} {
+        allow read: if historicoLeitura('pessoas', id);
+        allow create: if historicoOk('pessoas', id, rev);
+        allow update, delete: if false;
+      }
+    }
+    match /fases/{id} {
+      allow read: if autenticado() && alcanca(eu(), resource.data);
+      allow create: if autenticado() && criacaoOk('fases', id, eu()) && daPessoa(request.resource.data);
+      allow update: if autenticado() && atualizacaoOk('fases', id, eu()) && mesmaPessoa();
+      allow delete: if false;
+      match /historico/{rev} {
+        allow read: if historicoLeitura('fases', id);
+        allow create: if historicoOk('fases', id, rev);
+        allow update, delete: if false;
+      }
+    }
+    match /pips/{id} {
+      allow read: if autenticado() && alcanca(eu(), resource.data);
+      allow create: if autenticado() && criacaoOk('pips', id, eu()) && daPessoa(request.resource.data);
+      allow update: if autenticado() && atualizacaoOk('pips', id, eu()) && mesmaPessoa();
+      allow delete: if false;
+      match /historico/{rev} {
+        allow read: if historicoLeitura('pips', id);
+        allow create: if historicoOk('pips', id, rev);
+        allow update, delete: if false;
+      }
+    }
+    match /reclassificacoes/{id} {
+      allow read: if autenticado() && alcanca(eu(), resource.data);
+      allow create: if autenticado() && criacaoOk('reclassificacoes', id, eu()) && daPessoa(request.resource.data);
+      allow update: if autenticado() && atualizacaoOk('reclassificacoes', id, eu()) && mesmaPessoa();
+      allow delete: if false;
+      match /historico/{rev} {
+        allow read: if historicoLeitura('reclassificacoes', id);
+        allow create: if historicoOk('reclassificacoes', id, rev);
+        allow update, delete: if false;
+      }
+    }
+
+    // Fichas 1-4: so a area dona da ficha (ou SR/DPP) grava; toda a unidade le.
+    match /fichas/{id} {
+      allow read: if autenticado() && alcanca(eu(), resource.data);
+      allow create: if autenticado() && criacaoOk('fichas', id, eu()) && daPessoa(request.resource.data)
+        && request.resource.data.tipo in ['servico_social', 'psicologia', 'saude', 'policia_penal']
+        && podeEditarFicha(eu(), request.resource.data.tipo);
+      allow update: if autenticado() && atualizacaoOk('fichas', id, eu()) && mesmaPessoa()
+        && request.resource.data.tipo == resource.data.tipo
+        && podeEditarFicha(eu(), resource.data.tipo);
+      allow delete: if false;
+      match /historico/{rev} {
+        allow read: if historicoLeitura('fichas', id);
+        allow create: if historicoOk('fichas', id, rev);
+        allow update, delete: if false;
+      }
     }
   }
 }

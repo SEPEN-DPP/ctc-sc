@@ -1,17 +1,9 @@
 {
   "hosting": {
-    "public": ".",
+    "public": "web",
     "ignore": [
-      "firebase.json",
       "**/.*",
-      "**/.**",
-      ".git/**",
-      ".claude/**",
-      "**/node_modules/**",
-      "scripts/**",
-      "**/*.zip",
-      "firestore.rules",
-      "README.md"
+      "**/node_modules/**"
     ],
     "headers": [
       {
@@ -24,5 +16,12 @@
   },
   "firestore": {
     "rules": "firestore.rules"
+  },
+  "emulators": {
+    "auth": { "port": 9099 },
+    "firestore": { "port": 8080 },
+    "hosting": { "port": 5000 },
+    "ui": { "enabled": true, "port": 4000 },
+    "singleProjectMode": true
   }
 }
