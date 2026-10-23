@@ -109,9 +109,13 @@
   .tela-acesso .marca-grande .sigla-vermelha { color: var(--vermelho-sc); }
   .tela-acesso .marca-grande .sigla-verde { color: var(--verde-institucional); }
   .usuario-topo { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; font-size: 0.82rem; color: var(--cinza-secundario); }
-  .usuario-topo select { width: auto; max-width: 340px; margin-bottom: 0; padding: 0.3rem 0.45rem; font-size: 0.82rem; }
+  .usuario-topo select { width: auto; max-width: min(340px, 100%); margin-bottom: 0; padding: 0.3rem 0.45rem; font-size: 0.82rem; }
   .aviso-atualizacao { background: #fff7e0; border-bottom: 1px solid #f0d68a; padding: 0.55rem 1.5rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
   .autoria { font-size: 0.75rem; color: var(--cinza-secundario); margin-bottom: 0.75rem; }
+  .area-bpi { border: 1px dashed #c6cad0; border-radius: 6px; background: var(--cinza-fundo); padding: 0.6rem 0.8rem; margin-bottom: 0.9rem; font-size: 0.85rem; }
+  .area-bpi .texto-ajuda { margin: 0.2rem 0 0.4rem; }
+  .area-bpi input[type="file"] { width: auto; max-width: 100%; margin-bottom: 0.3rem; padding: 0.25rem; font-size: 0.82rem; }
+  .area-bpi.arrastando { border-color: var(--verde-institucional); background: #e4efe0; }
   @media (max-width: 600px) { main { padding: 1rem; } .topo { padding: 0.75rem 1rem; } }
   @media print {
     .topo, .faixa-titulo nav, nav, .botao, .rodape, .sem-impressao, .aviso-atualizacao { display: none !important; }
@@ -909,6 +913,161 @@ function renderizarUnidade(container) {
 }
 
 // ---------------------------------------------------------------------
+// Leitura do BPI (Boletim Penal da Policia Penal-SC) para preencher o ingresso
+// ---------------------------------------------------------------------
+// O arquivo e lido so neste navegador: nao e enviado nem guardado. Mesma abordagem do
+// sistema do exame criminologico (pdf.js servido pelo proprio site, CDN so de reserva).
+const LEITOR_PDF = {
+  fontes: [
+    { lib: 'vendor/pdfjs/pdf.min.js', worker: 'vendor/pdfjs/pdf.worker.min.js' },
+    { lib: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', worker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js' }
+  ],
+  worker: null
+};
+
+function carregarLeitorPdf() {
+  return new Promise(function (resolve, reject) {
+    if (window.pdfjsLib && LEITOR_PDF.worker) { resolve(); return; }
+    const tentar = function (i) {
+      const fonte = LEITOR_PDF.fontes[i];
+      if (!fonte) { reject(new Error('offline')); return; }
+      const s = document.createElement('script');
+      s.src = fonte.lib;
+      s.onload = function () {
+        if (window.pdfjsLib) { LEITOR_PDF.worker = fonte.worker; resolve(); } else tentar(i + 1);
+      };
+      s.onerror = function () { s.remove(); tentar(i + 1); };
+      document.head.appendChild(s);
+    };
+    tentar(0);
+  });
+}
+
+async function lerTextoDoArquivo(arquivo) {
+  if (/\.txt$/i.test(arquivo.name)) return await arquivo.text();
+  if (!/\.pdf$/i.test(arquivo.name)) throw new Error('formato');
+  await carregarLeitorPdf();
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = LEITOR_PDF.worker;
+  const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(await arquivo.arrayBuffer()) }).promise;
+  let texto = '';
+  for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
+    const pagina = await pdf.getPage(i);
+    const conteudo = await pagina.getTextContent();
+    texto += conteudo.items.map(function (it) { return it.str; }).join(' ') + '\n';
+  }
+  if (texto.replace(/\s/g, '').length < 40) throw new Error('sem camada de texto');
+  return texto;
+}
+
+function nomeProprio(s) {
+  const minusculas = ['de', 'da', 'do', 'das', 'dos', 'e'];
+  return s.toLowerCase().split(/\s+/).map(function (w, i) {
+    return minusculas.indexOf(w) !== -1 && i > 0 ? w : w.charAt(0).toUpperCase() + w.slice(1);
+  }).join(' ');
+}
+
+// Extrai do texto do BPI os campos do "Registrar ingresso". Heuristico (o BPI nao tem um
+// layout unico): devolve so o que achou, e a tela pede conferencia.
+function extrairDadosBpi(texto) {
+  const t = texto.replace(/\s+/g, ' ');
+  const campos = {};
+  const achados = [];
+  const faltando = [];
+  const MAIUSCULAS = 'A-ZÁÀÂÃÉÊÍÓÔÕÚÜÇ';
+  const reNome = new RegExp('^([' + MAIUSCULAS + ']{2,}(?:\\s+(?:D[AEO]S?|E|[' + MAIUSCULAS + "']{2,})){1,6})");
+  let m;
+
+  // nome: rotulo (apenado, reeducando, nome...) seguido do nome em CAIXA ALTA
+  let nome = null;
+  const rotulo = t.match(/(?:apenad[oa]|reeducand[oa]|executad[oa]|sentenciad[oa]|condenad[oa]|recuperand[oa]|preso|presa|nome(?!\s+(?:d[oa]s?\s+(?:pai|m[ãa]e|genitor)|social)))(?:\(s\))?\s*[:\-]?\s*/i);
+  if (rotulo) {
+    const mn = t.slice(rotulo.index + rotulo[0].length).match(reNome);
+    if (mn) nome = mn[1];
+  }
+  if (!nome) {
+    const mn = t.match(new RegExp('\\b([' + MAIUSCULAS + ']{3,}(?:\\s+(?:D[AEO]S?|E|[' + MAIUSCULAS + ']{2,})){2,5})\\b'));
+    if (mn && !/PODER|JUSTI|VARA|COMARCA|ESTADO|MINIST|PENITENCI|PRES[ÍI]DIO|TRIBUNAL|EXECU|SANTA CATARINA|POL[ÍI]CIA|BOLETIM|SECRETARIA/.test(mn[1])) nome = mn[1];
+  }
+  if (nome) { campos.nome = nomeProprio(nome.trim()); achados.push('nome'); } else faltando.push('nome');
+
+  m = t.match(/nome\s+social\s*[:\-]?\s*/i);
+  if (m) {
+    const mn = t.slice(m.index + m[0].length).match(reNome);
+    if (mn) { campos.nomeSocial = nomeProprio(mn[1].trim()); achados.push('nome social'); }
+  }
+
+  m = t.match(/(?:IPEN|matr[íi]cula|prontu[áa]rio)\s*(?:n[.ºo°]?\s*)?[:\-]?\s*(\d{4,10})/i);
+  if (m) { campos.prontuario = m[1]; achados.push('prontuário/IPEN'); } else faltando.push('prontuário/IPEN');
+
+  m = t.match(/regime\s+(?:atual|de\s+cumprimento|prisional)?\s*[:\-]?\s*(fechad[oa]|semiabert[oa]|abert[oa])/i);
+  if (m) {
+    campos.regime = { fechado: 'fechado', fechada: 'fechado', semiaberto: 'semiaberto', semiaberta: 'semiaberto', aberto: 'aberto', aberta: 'aberto' }[m[1].toLowerCase()];
+    achados.push('regime');
+  } else faltando.push('regime');
+
+  if (/pres[oa]\s+provis[óo]ri|pris[ãa]o\s+(?:preventiva|provis[óo]ria|tempor[áa]ria)|situa[çc][ãa]o\s*(?:processual|jur[íi]dica|prisional)?\s*[:\-]?\s*provis/i.test(t)) {
+    campos.tipoPrisao = 'provisoria'; achados.push('tipo de prisão (provisória)');
+  } else if (/condenad[oa]|transitad[oa]\s+em\s+julgado|execu[çc][ãa]o\s+definitiva|guia\s+de\s+recolhimento\s+definitiva|pena\s+total/i.test(t)) {
+    campos.tipoPrisao = 'definitiva'; achados.push('tipo de prisão (definitiva)');
+  } else faltando.push('tipo de prisão');
+
+  m = t.match(/(?:data\s+d[ae]\s+(?:ingresso|entrada|recolhimento|inclus[ãa]o)|ingress(?:o|ou)(?:\s+n[ao]\s+(?:sistema|unidade))?(?:\s+em)?|data\s+da\s+pris[ãa]o|pres[oa]\s+em)\s*[:\-]?\s*(\d{2})\/(\d{2})\/(\d{4})/i);
+  if (m) { campos.dataIngresso = m[3] + '-' + m[2] + '-' + m[1]; achados.push('data de ingresso'); } else faltando.push('data de ingresso');
+
+  return { campos: campos, achados: achados, faltando: faltando };
+}
+
+// Quadro "Preencher com o BPI": escolher ou arrastar o PDF; preenche os campos do ingresso.
+function areaPreencherComBpi(entradas) {
+  const resultado = el('div', {});
+  const inputArquivo = el('input', { type: 'file', accept: '.pdf,.txt,application/pdf,text/plain' });
+
+  async function processar(arquivo) {
+    limpar(resultado);
+    resultado.appendChild(el('p', { class: 'texto-ajuda', texto: 'Lendo ' + arquivo.name + '...' }));
+    let texto;
+    try {
+      texto = await lerTextoDoArquivo(arquivo);
+    } catch (e) {
+      limpar(resultado);
+      const motivo = e.message === 'sem camada de texto'
+        ? 'Este PDF é uma imagem digitalizada (escaneada) e não tem texto para ler. Baixe do sistema a versão gerada por ele, não a escaneada.'
+        : e.message === 'formato' ? 'Use o BPI em PDF (ou TXT).'
+        : e.message === 'offline' ? 'Não foi possível carregar o leitor de PDF. Atualize a página (Ctrl+F5) e tente de novo.'
+        : 'Não foi possível abrir este PDF (protegido por senha ou corrompido).';
+      resultado.appendChild(mensagemErro(motivo));
+      return;
+    }
+    const r = extrairDadosBpi(texto);
+    Object.keys(r.campos).forEach(function (k) { entradas[k].value = r.campos[k]; });
+    limpar(resultado);
+    if (r.achados.length) resultado.appendChild(mensagemOk('Preenchido a partir do BPI: ' + r.achados.join(', ') + '. Confira antes de registrar.'));
+    if (r.faltando.length) resultado.appendChild(el('p', { class: 'texto-ajuda', texto: 'Não encontrado no BPI (preencha à mão): ' + r.faltando.join(', ') + '.' }));
+  }
+
+  inputArquivo.addEventListener('change', function () {
+    const arquivo = inputArquivo.files && inputArquivo.files[0];
+    if (arquivo) processar(arquivo);
+    inputArquivo.value = '';
+  });
+  const quadro = el('div', { class: 'area-bpi' }, [
+    el('strong', { texto: 'Preencher com o BPI' }),
+    el('p', { class: 'texto-ajuda', texto: 'Escolha ou arraste aqui o Boletim Penal (PDF). Os campos abaixo são preenchidos sozinhos; o arquivo é lido só neste computador e não é enviado nem guardado.' }),
+    inputArquivo,
+    resultado
+  ]);
+  quadro.addEventListener('dragover', function (ev) { ev.preventDefault(); quadro.classList.add('arrastando'); });
+  quadro.addEventListener('dragleave', function (ev) { if (!quadro.contains(ev.relatedTarget)) quadro.classList.remove('arrastando'); });
+  quadro.addEventListener('drop', function (ev) {
+    ev.preventDefault();
+    quadro.classList.remove('arrastando');
+    const arquivo = ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (arquivo) processar(arquivo);
+  });
+  return quadro;
+}
+
+// ---------------------------------------------------------------------
 // Pessoas privadas de liberdade — lista e cadastro
 // ---------------------------------------------------------------------
 function renderizarListaPessoas(container) {
@@ -957,6 +1116,7 @@ function renderizarListaPessoas(container) {
   }, [
     el('h3', { texto: 'Registrar ingresso' }),
     el('p', { class: 'texto-ajuda', texto: 'Abre automaticamente a fase de Classificação e Singularização (início da Ficha 1/Módulo I), com o prazo de classificação inicial calculado conforme o tipo da unidade.' }),
+    areaPreencherComBpi({ nome: nome.input, nomeSocial: nomeSocial.input, prontuario: prontuario.input, regime: regime.select, tipoPrisao: tipoPrisao.select, dataIngresso: dataIngresso.input }),
     areaErro,
     el('div', { class: 'grade grade-3' }, [nome.wrap, nomeSocial.wrap, prontuario.wrap, regime.wrap, tipoPrisao.wrap, dataIngresso.wrap]),
     el('button', { class: 'botao botao-primario', type: 'submit', texto: 'Registrar' })
