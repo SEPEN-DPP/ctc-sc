@@ -2135,7 +2135,9 @@ function renderizarProntuario(container, pessoa) {
   const impressao = el('div', { class: 'botoes-linha' }, [
     botao('Imprimir modelo completo', 'botao-secundario', function () { imprimirProntuario(pessoa, registroDaTela(), 'completo'); }),
     ' ',
-    botao('Imprimir modelo resumido', 'botao-secundario', function () { imprimirProntuario(pessoa, registroDaTela(), 'resumido'); })
+    botao('Imprimir modelo resumido', 'botao-secundario', function () { imprimirProntuario(pessoa, registroDaTela(), 'resumido'); }),
+    ' ',
+    botao('Gerar relatório', 'botao-secundario', function () { gerarRelatorioPsicossocial(pessoa, registroDaTela()); })
   ]);
 
   container.appendChild(cartaoRecolhivel('Prontuário Psicossocial', [
@@ -2213,6 +2215,214 @@ function imprimirProntuario(pessoa, reg, modelo) {
   janela.document.close();
   janela.focus();
   janela.print();
+}
+
+// --- Relatorio psicossocial (rascunho para o profissional revisar e assinar) ---
+// Monta o texto so com o que o prontuario registra; as consideracoes sao sugestoes a
+// partir das marcacoes. A pagina abre editavel: o profissional corrige e imprime.
+function gerarRelatorioPsicossocial(pessoa, reg) {
+  const v = reg.valores || {};
+  const rot = function (chave) { return rotuloDaOpcao(chave, v[chave]); };
+  const min = function (chave) { return rot(chave).toLowerCase(); };
+  const tem = function (chave) { return !!(v[chave] && String(v[chave]).trim()); };
+  const sim = function (chave) { return v[chave] === 'sim'; };
+  const ponto = function (s) { s = String(s).trim(); return /[.!?]$/.test(s) ? s : s + '.'; };
+  const entre = function (s) { return s ? ' (' + s + ')' : ''; };
+  const o = v.genero === 'feminino' ? 'a' : (v.genero === 'masculino' ? 'o' : '(a)');
+  // "nao", "nenhum"... escritos no campo nao viram achado no relatorio
+  const informado = function (s) { return s && !/^\s*(n[aã]o|nenhum[a]?|nada|-+)\s*\.?\s*$/i.test(s) ? s : ''; };
+  function paragrafo(frases) {
+    const texto = frases.filter(Boolean).map(ponto).join(' ');
+    return texto ? '<p>' + esc(texto) + '</p>' : '';
+  }
+  function lista(itens) {
+    const li = itens.filter(Boolean).map(function (i) { return '<li>' + esc(ponto(i)) + '</li>'; }).join('');
+    return li ? '<ul>' + li + '</ul>' : '';
+  }
+  function secao(titulo, corpo) { return corpo ? '<h2>' + titulo + '</h2>' + corpo : ''; }
+  function parente(rotulo, nome, ocupacao, vivo, motivo) {
+    if (!nome && !ocupacao && !vivo) return '';
+    return rotulo + ': ' + (nome || 'nome não informado') + entre(ocupacao) + (vivo === 'nao' ? ', falecid' + (rotulo === 'Pai' ? 'o' : 'a') + entre(motivo) : '');
+  }
+
+  // 1. Identificacao
+  const linhasId = [
+    ['Nome', (pessoa.nome || '') + (pessoa.nomeSocial ? ' (nome social: ' + pessoa.nomeSocial + ')' : '') + (v.alcunha ? ' — vulgo ' + v.alcunha : '')],
+    ['IPEN', pessoa.prontuario || ''],
+    ['Data de nascimento / idade', [v.data_nascimento ? formatarData(v.data_nascimento) : '', v.idade ? v.idade + ' anos' : ''].filter(Boolean).join(' — ')],
+    ['Naturalidade / nacionalidade', [v.naturalidade, v.nacionalidade].filter(Boolean).join(' — ')],
+    ['Estado civil', rot('estado_civil') + (sim('tem_companheiro') && v.tempo_juntos ? ' (com companheira(o) há ' + v.tempo_juntos + ')' : '')],
+    ['Escolaridade', [v.serie, v.sabe_ler && v.sabe_ler !== 'sim' ? 'lê: ' + min('sabe_ler') : '', v.sabe_escrever && v.sabe_escrever !== 'sim' ? 'escreve: ' + min('sabe_escrever') : ''].filter(Boolean).join('; ')],
+    ['Profissão', v.profissao],
+    ['Data da prisão / artigo', [v.data_prisao ? formatarData(v.data_prisao) : '', v.artigo ? 'art. ' + v.artigo : ''].filter(Boolean).join(' — ') +
+      entre([v.motivo_prisao ? 'prisão: ' + min('motivo_prisao') : '', v.condenado ? 'condenado: ' + min('condenado') : ''].filter(Boolean).join('; '))],
+    ['Regime inicial', v.regime_inicial || pessoa.regime]
+  ].filter(function (l) { return l[1] && String(l[1]).trim(); });
+  const tabelaId = '<table>' + linhasId.map(function (l) { return '<tr><th>' + esc(l[0]) + '</th><td>' + esc(l[1]) + '</td></tr>'; }).join('') + '</table>';
+
+  // 3. Contexto familiar e social
+  const familia1 = paragrafo([
+    tem('criado_por') ? 'Foi criad' + o + ' por ' + v.criado_por : '',
+    parente('Pai', v.pai, v.pai_ocupacao, v.pai_vivo, v.pai_motivo_falecimento),
+    parente('Mãe', v.mae, v.mae_ocupacao, v.mae_viva, v.mae_motivo_falecimento),
+    sim('pais_separados') ? 'Os pais se separaram' + (v.idade_separacao_pais ? ' quando tinha ' + v.idade_separacao_pais + ' anos' : '') + entre(v.pais_separados_motivo) : '',
+    v.pais_nunca_moraram_juntos ? 'Os pais nunca moraram juntos' : '',
+    tem('num_irmaos') ? 'Tem ' + v.num_irmaos + ' irmão(s)' + (sim('irmao_falecido') ? ', com irmão(s) falecido(s)' + entre(v.irmao_falecido_motivo) : '') : '',
+    comRotulo('Descreve as relações familiares', v.relacoes_familia),
+    comRotulo('Sobre a infância e a adolescência', v.infancia_adolescencia),
+    tem('quem_sustentava') ? 'Quem sustentava a casa: ' + v.quem_sustentava : '',
+    sim('contribuia_financeiramente') ? 'Contribuía financeiramente com a casa ainda criança' + entre(v.contribuia_como) : '',
+    sim('violencia_infancia') ? 'Relata ter sofrido violência na infância' + entre(v.violencia_infancia_tipo) : ''
+  ]);
+  const familia2 = paragrafo([
+    sim('tem_companheiro') ? 'Tem companheira(o)' + (v.companheiro_nome ? ', ' + v.companheiro_nome : '') + (v.companheiro_idade ? ', ' + v.companheiro_idade + ' anos' : '') + (v.tempo_juntos ? ', há ' + v.tempo_juntos : '') : '',
+    sim('outras_unioes') ? 'Teve outras uniões' + entre([v.outras_unioes_quantas, v.motivo_separacoes].filter(Boolean).join('; ')) : '',
+    sim('possui_filhos') ? 'Tem ' + (v.num_filhos || '') + ' filho(s)' + (v.filhos_com_quem ? '; com quem estão: ' + v.filhos_com_quem : '') + (v.filhos_como_estao ? '; segundo relata, estão: ' + v.filhos_como_estao : '') : (v.possui_filhos === 'nao' ? 'Não tem filhos' : ''),
+    (tem('mora_com') || tem('bairro') || tem('cidade_uf') || v.moradia) ? 'Antes da prisão morava' + (v.moradia ? ' em casa ' + min('moradia') : '') +
+      ([v.bairro, v.cidade_uf].filter(Boolean).length ? ' em ' + [v.bairro, v.cidade_uf].filter(Boolean).join(', ') : '') + (v.mora_com ? ', com ' + v.mora_com : '') : '',
+    comRotulo('Hoje a família se sustenta com', v.sustento_hoje),
+    sim('familiar_preso') ? 'Há familiar com passagem pelo sistema prisional' + entre([v.familiar_preso_quem, v.familiar_preso_motivo, v.familiar_preso_onde].filter(Boolean).join(', ')) : '',
+    sim('recebe_visitas') ? 'Recebe visitas' + entre([v.visitas_quem, v.visitas_frequencia].filter(Boolean).join(', '))
+      : (v.recebe_visitas === 'nao' ? 'Não recebe visitas' + entre(v.visitas_porque) : '')
+  ]);
+
+  // 4. Escolaridade e trabalho
+  const escola = paragrafo([
+    comRotulo('Estudou até', v.serie),
+    comRotulo('Reprovação', v.reprovou),
+    tem('por_que_nao_prosseguiu') ? 'Parou de estudar: ' + v.por_que_nao_prosseguiu : '',
+    v.interesse_continuar ? (sim('interesse_continuar') ? 'Tem interesse em retomar os estudos' : 'Não tem interesse em retomar os estudos' + entre(v.interesse_continuar_porque)) : '',
+    sim('trabalhava') ? 'Trabalhava antes da prisão' + (v.trabalhava_em ? ' (' + v.trabalhava_em + ')' : '') : (v.trabalhava === 'nao' ? 'Não trabalhava antes da prisão' : ''),
+    comRotulo('Dependiam do seu trabalho', v.dependiam_trabalho),
+    comRotulo('Estudo em unidade prisional', v.estudou_up),
+    comRotulo('Trabalho em unidade prisional', v.atividade_laborativa_up),
+    v.interesse_atividades ? 'Interesse em participar das atividades desta UP: ' + min('interesse_atividades') : ''
+  ]);
+
+  // 5. Saude
+  const saude = lista([
+    sim('doenca') || tem('doencas') ? 'Doença(s): ' + (v.doencas || 'sim') + (v.doencas_quando ? ', desde ' + v.doencas_quando : '') + (v.fez_tratamento ? '; tratamento: ' + v.fez_tratamento : '') : '',
+    informado(v.medicamentos) ? 'Medicamentos em uso: ' + v.medicamentos : (sim('usa_medicamentos') ? 'Faz uso de medicamentos' : ''),
+    sim('internacao') ? 'Internação' + entre([v.internacao_quando, v.internacao_motivo].filter(Boolean).join(' — ')) : (v.internacao === 'nao' ? 'Sem internações' : ''),
+    comRotulo('Sintomas atuais', informado(v.sintomas)),
+    [v.padrao_sono ? 'sono ' + min('padrao_sono') : '', v.alimentacao ? 'alimentação ' + min('alimentacao') : ''].filter(Boolean).join(', ').replace(/^./, function (c) { return c.toUpperCase(); }),
+    v.pensamentos_morte ? (sim('pensamentos_morte') ? 'Refere pensamentos de morte' : 'Nega pensamentos de morte') : '',
+    sim('tentativa_suicidio') ? 'Relata tentativa de suicídio' + entre(v.tentativa_suicidio_quando) : (v.tentativa_suicidio === 'nao' ? 'Nega tentativa de suicídio' : ''),
+    sim('acompanhamento_psi') ? 'Já fez acompanhamento psicológico/psiquiátrico' + entre([v.acompanhamento_psi_quando, v.acompanhamento_psi_motivo].filter(Boolean).join(' — ')) : (v.acompanhamento_psi === 'nao' ? 'Nunca fez acompanhamento psicológico ou psiquiátrico' : ''),
+    v.doencas_hereditarias && v.doencas_hereditarias.length ? 'Antecedentes familiares: ' + min('doencas_hereditarias') : '',
+    v.doenca_mental_familia ? 'Doença mental na família: ' + min('doenca_mental_familia') + (v.doenca_mental_familia_quem ? ' (' + v.doenca_mental_familia_quem + ')' : '') : ''
+  ]);
+
+  // 6. Substancias
+  const substanciasUsadas = [];
+  (v.substancias || []).map(function (s) { return rotuloDaOpcao('substancias', s).toLowerCase(); }).concat(v.substancias_outras ? [v.substancias_outras] : [])
+    .forEach(function (s) { if (s && substanciasUsadas.indexOf(s.toLowerCase()) === -1) substanciasUsadas.push(s.toLowerCase()); });
+  const substancias = v.usava_substancias === 'nao' ? paragrafo(['Nega uso de substâncias psicoativas antes da prisão']) : paragrafo([
+    sim('usava_substancias') ? 'Antes da prisão usava ' + (substanciasUsadas.join(', ') || 'substâncias psicoativas') +
+      (v.idade_inicio_uso ? ', desde os ' + v.idade_inicio_uso + ' anos' : '') + (v.frequencia_uso ? ', ' + v.frequencia_uso : '') + (v.usava_como ? ', ' + min('usava_como') : '') + (v.por_que_usava ? ' (motivo referido: ' + v.por_que_usava + ')' : '') : '',
+    sim('tentou_parar') ? 'Já tentou parar' + (v.conseguiu_parar === 'sim' ? ' e conseguiu' : (v.conseguiu_parar === 'nao' ? ', sem conseguir' : '')) : '',
+    comRotulo('Parou de usar há', v.tempo_parou),
+    v.usou_apos_prisao ? (sim('usou_apos_prisao') ? 'Continuou ou voltou a usar depois de preso' : 'Refere que não usou depois de preso') : '',
+    sim('quer_ajuda_parar') ? 'Gostaria de receber ajuda para parar de usar' : ''
+  ]);
+
+  // 7. Situacao prisional
+  const prisional = paragrafo([
+    comRotulo('Tempo nesta unidade', v.tempo_nesta_up),
+    sim('antecedentes') ? 'Tem antecedentes' + entre(v.antecedentes_quais) : (v.antecedentes === 'nao' ? 'Sem antecedentes' : ''),
+    comRotulo('Já cumpriu pena em', v.ups_anteriores),
+    tem('idade_inicio_delitos') ? 'Refere ter começado a cometer delitos aos ' + v.idade_inicio_delitos : '',
+    sim('pena_menoridade') ? 'Cumpriu medida na menoridade' + entre([v.menoridade_onde, v.menoridade_tempo, v.menoridade_infracao].filter(Boolean).join(', ')) : '',
+    comRotulo('Motivo referido para o delito', v.motivo_delito),
+    comRotulo('Como se sentiu ao ser preso', v.sentimento_ao_ser_preso),
+    comRotulo('Sentimento hoje em relação ao delito', v.sentimento_delito),
+    v.sentenca ? 'Considera a sentença ' + min('sentenca') + entre(v.sentenca_porque) : '',
+    [sim('fuga') ? 'fuga' + entre(v.fugas_quantas) : '', sim('sancao_disciplinar') ? 'sanção disciplinar' + entre([v.sancoes_quantas, v.sancao_motivo].filter(Boolean).join(', ')) : '', sim('rebeliao') ? 'participação em rebelião' + entre(v.rebeliao_obs) : ''].filter(Boolean).join('; ').replace(/^(.)/, function (c) { return 'Registros: ' + c; }),
+    (v.fuga === 'nao' && v.sancao_disciplinar === 'nao' && v.rebeliao === 'nao') ? 'Não há registro de fuga, sanção disciplinar ou participação em rebelião' : '',
+    comRotulo('Problema de relacionamento no sistema prisional', v.problema_relacionamento)
+  ]);
+
+  // 8. Exame do estado mental
+  const adequado = function (chave, bom, ruim) { return v[chave] ? (sim(chave) ? bom : ruim) : ''; };
+  const memoria = ['memoria_remota', 'memoria_recente', 'memoria_imediata'].filter(function (k) { return v[k]; });
+  const exame = paragrafo([
+    v.aparencia ? 'Apresentou-se ' + min('aparencia') + (v.aparencia_obs ? ' (' + v.aparencia_obs + ')' : '') : '',
+    [v.atitude && v.atitude.length ? min('atitude') : '', v.atitude_outros].filter(Boolean).join(', ').replace(/^(.)/, function (c) { return 'Atitude na entrevista: ' + c; }),
+    [v.comportamento_motor && v.comportamento_motor.length ? min('comportamento_motor') : '', v.comportamento_motor_outros].filter(Boolean).join(', ').replace(/^(.)/, function (c) { return 'Comportamento motor: ' + c; }),
+    [v.humor && v.humor.length ? min('humor') : '', v.humor_outros].filter(Boolean).join(', ').replace(/^(.)/, function (c) { return 'Humor: ' + c; }),
+    v.afeto ? 'Afeto ' + min('afeto') : '',
+    v.fala && v.fala.length ? 'Fala ' + min('fala') : '',
+    v.nivel_consciencia ? 'Consciência ' + min('nivel_consciencia') : '',
+    memoria.length ? 'Memória: ' + memoria.map(function (k) { return k.replace('memoria_', '') + ' ' + (sim(k) ? 'preservada' : 'prejudicada'); }).join(', ') : '',
+    [adequado('concentracao_calculos', 'concentração e cálculo adequados', 'concentração e cálculo prejudicados'),
+      adequado('informacao_inteligencia', 'informação e inteligência adequadas', 'informação e inteligência prejudicadas'),
+      adequado('discernimento', 'discernimento preservado', 'discernimento prejudicado')].filter(Boolean).join('; ').replace(/^./, function (c) { return c.toUpperCase(); }),
+    v.alucinacoes ? (sim('alucinacoes') ? 'Refere alucinações' + entre(v.alucinacoes_quais) : 'Sem alucinações') : '',
+    v.delirios ? (sim('delirios') ? 'Apresenta delírios, obsessões ou fobias' + entre(v.delirios_quais) : 'Sem delírios, obsessões ou fobias') : '',
+    v.processo_pensamento && v.processo_pensamento.length ? 'Processo de pensamento: ' + min('processo_pensamento') : '',
+    [adequado('negacao_doenca', 'nega a própria condição', ''), adequado('culpa_fatores_externos', 'atribui a situação a fatores externos', ''),
+      adequado('tolerancia_frustracao', 'tolera frustração', 'baixa tolerância à frustração'), v.autoestima ? 'autoestima ' + min('autoestima') : ''].filter(Boolean).join('; ').replace(/^./, function (c) { return c.toUpperCase(); }),
+    v.testes_aplicados ? 'Testes aplicados: ' + v.testes_aplicados + (v.resultado_testes ? '. Resultado: ' + v.resultado_testes : '') : ''
+  ]);
+
+  // 9. Evolucao
+  const atend = reg.atendimentos || [];
+  const evolucao = (atend.length ? '<table><tr><th style="width:18%">Data</th><th style="width:auto">Anotação</th></tr>' + atend.map(function (a) {
+    return '<tr><td>' + formatarData(a.data) + '</td><td>' + esc(a.texto).replace(/\n/g, '<br>') + '</td></tr>';
+  }).join('') + '</table>' : '') + paragrafo([v.evolucao]);
+
+  // 10. Consideracoes (sugestoes a partir das marcacoes - o profissional revisa)
+  const humorRisco = (v.humor || []).some(function (h) { return ['deprimido', 'triste', 'tenso', 'apatico'].indexOf(h) !== -1; });
+  const consideracoes = lista([
+    sim('doenca') || sim('usa_medicamentos') || informado(v.sintomas) || v.padrao_sono === 'irregular' ? 'Saúde: acompanhamento pela equipe de saúde da unidade' + entre([informado(v.doencas), informado(v.medicamentos), informado(v.sintomas)].filter(Boolean).join('; ')) : '',
+    sim('tentativa_suicidio') || sim('pensamentos_morte') || humorRisco || sim('alucinacoes') || sim('delirios') ? 'Saúde mental: acompanhamento psicológico periódico' +
+      (sim('tentativa_suicidio') || sim('pensamentos_morte') ? ', atento ao histórico de ideação/tentativa de suicídio' : '') + '; avaliação psiquiátrica se os sintomas persistirem' : '',
+    sim('usava_substancias') ? 'Uso de substâncias: ' + (sim('quer_ajuda_parar') ? 'inclusão em ação de cuidado, pois deseja ajuda para parar ou se manter sem usar' : 'acompanhar o uso e oferecer cuidado') : '',
+    sim('interesse_continuar') || (v.sabe_ler && v.sabe_ler !== 'sim') ? 'Educação: matrícula na escola da unidade' + (v.serie ? ' (estudou até ' + v.serie + ')' : '') : '',
+    v.interesse_atividades === 'sim' || v.interesse_atividades === 'talvez' ? 'Trabalho: inclusão em atividade laboral' + (v.trabalhava_em ? ' compatível com a experiência anterior (' + v.trabalhava_em + ')' : '') : '',
+    sim('recebe_visitas') ? 'Família: manter as visitas e orientar a família sobre a rede de proteção social do município' : (v.recebe_visitas === 'nao' ? 'Família: buscar a reaproximação com familiares ou outra referência de apoio' : '')
+  ]);
+
+  const regional = REGIONAIS_SC.find(function (r) { return UNIDADE_ATIVA && r.sigla === UNIDADE_ATIVA.sr; });
+  const nomeRegional = regional ? regional.nome.replace(/^SR\d+\s*-\s*/, '') : '';
+  const hoje = new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const corpo =
+    '<div class="cab">ESTADO DE SANTA CATARINA<br>SECRETARIA DE ESTADO DE JUSTIÇA E REINTEGRAÇÃO SOCIAL<br>POLÍCIA PENAL<br>' +
+      esc(nomeRegional.toUpperCase()) + '<br>' + esc((DADOS.unidade.nome || '').toUpperCase()) + '</div>' +
+    '<h1>RELATÓRIO PSICOSSOCIAL</h1>' +
+    '<div class="sub">Elaborado a partir do Prontuário Psicossocial' + (reg.dataEntrevista ? ' (entrevista de ' + formatarData(reg.dataEntrevista) + ')' : '') + (atend.length ? ' e das anotações de atendimento' : '') + '</div>' +
+    secao('1. Identificação', tabelaId) +
+    secao('2. Objetivo e procedimentos', '<p>Este relatório reúne as informações obtidas na entrevista psicossocial e nos atendimentos posteriores, para subsidiar a Comissão Técnica de Classificação na individualização da pena (arts. 5º a 9º da Lei nº 7.210/1984). Foram utilizados: entrevista semiestruturada (Prontuário Psicossocial), exame do estado mental e consulta aos registros da unidade.</p>') +
+    secao('3. Contexto familiar e social', familia1 + familia2) +
+    secao('4. Escolaridade e trabalho', escola) +
+    secao('5. Saúde', saude) +
+    secao('6. Uso de substâncias psicoativas', substancias) +
+    secao('7. Situação prisional', prisional) +
+    secao('8. Exame do estado mental (síntese)', exame) +
+    secao('9. Evolução nos atendimentos', evolucao) +
+    '<h2>10. Considerações e encaminhamentos</h2>' +
+      (consideracoes ? '<p>Sugere-se:</p>' + consideracoes : '<p>[Escreva aqui as considerações e os encaminhamentos.]</p>') +
+      '<p class="nota">Este relatório identifica necessidades de acompanhamento e cuidado. Não faz prognóstico de reincidência nem juízo de periculosidade.</p>' +
+    '<p class="local">____________________, ' + esc(hoje) + '.</p>' +
+    '<div class="assinaturas"><div>Psicólogo(a)<br>Matrícula</div><div>Assistente Social<br>Matrícula</div></div>';
+
+  const janela = window.open('', '_blank');
+  janela.document.write(
+    '<html><head><meta charset="UTF-8"><title>Relatório Psicossocial - ' + esc(pessoa.nomeSocial || pessoa.nome) + '</title>' +
+    '<style>@page{size:A4;margin:2cm 2cm 2cm 2.5cm} body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.45;color:#000;background:#fff;max-width:17cm;margin:1.5cm auto;padding:0 16px}' +
+    ' .aviso{background:#fff7d6;border:1px solid #e0c060;padding:6px 10px;font-size:9.5pt;margin-bottom:18px}' +
+    ' .cab{font-family:"Times New Roman",serif;font-size:10pt;margin-bottom:18px} h1{background:#e0e0e0;text-align:center;font-size:14pt;padding:4px;margin:0 0 4px}' +
+    ' .sub{text-align:center;font-size:9.5pt;margin-bottom:16px} h2{font-size:11pt;text-transform:uppercase;border-bottom:1px solid #000;margin:18px 0 6px;padding-bottom:2px}' +
+    ' table{width:100%;border-collapse:collapse;font-size:10pt} td,th{border:1px solid #000;padding:3px 6px;text-align:left;vertical-align:top} th{background:#f0f0f0;width:30%;font-weight:600}' +
+    ' p{margin:0 0 8px;text-align:justify} ul{margin:0 0 8px 1.1em;padding:0} .nota{font-size:9pt;color:#333;font-style:italic}' +
+    ' .assinaturas{display:flex;gap:40px;margin-top:50px} .assinaturas div{flex:1;border-top:1px solid #000;text-align:center;padding-top:4px;font-size:10pt} .local{margin-top:28px;text-align:right}' +
+    ' [contenteditable]:focus{outline:2px dashed #9bb} @media print{.aviso{display:none} body{margin:0;padding:0;max-width:none}}</style>' +
+    '</head><body>' +
+    '<div class="aviso"><b>Rascunho montado com o Prontuário Psicossocial.</b> Clique no texto para corrigir ou completar (o contexto e as considerações pedem a redação do profissional). Depois imprima com Ctrl+P. Nada do que for editado aqui é salvo no site.</div>' +
+    '<div contenteditable="true">' + corpo + '</div></body></html>'
+  );
+  janela.document.close();
+  janela.focus();
 }
 
 // --- Fichas 1-3 a partir do prontuario ---
