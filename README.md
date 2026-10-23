@@ -14,6 +14,8 @@ Ferramenta de apoio às Comissões Técnicas de Classificação do DPP-SC.
 | SR | a própria regional (painel da regional) | tudo da regional | membros e diretores(as) da regional |
 | DPP | o estado todo (painel estadual) | tudo | qualquer conta |
 
+**Prontuário Psicossocial** (modelos completo e resumido do Presídio Regional de Criciúma): só psicólogo(a) e assistente social da unidade, a SR e o DPP veem e editam. Diretor(a) e as outras áreas não leem, nem o histórico. Fica na coleção `prontuarios`, separada das fichas. Na tela da pessoa dá para preencher o prontuário lendo o PDF já preenchido, imprimir nos dois modelos e, em cada Ficha 1–3, completar os campos vazios com o que o prontuário registra.
+
 As regras ficam em `firestore.rules`. Nada é apagado: cada gravação guarda uma cópia em `<coleção>/<id>/historico/<rev>`, e quem salva em cima de uma versão desatualizada é recusado.
 
 ## Primeiro DPP

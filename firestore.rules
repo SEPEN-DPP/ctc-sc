@@ -28,6 +28,11 @@ service cloud.firestore {
     function podeEditarFicha(p, tipo) {
       return regionalOuDPP(p) || (p.perfil == 'MEMBRO' && fichaDoCargo(p.get('cargo', '')) == tipo);
     }
+    // Prontuario psicossocial (dados sensiveis): so psicologo(a) e assistente social da
+    // unidade, e SR/DPP, leem e gravam. Mesma regra do index.html (podeUsarProntuario).
+    function usaProntuario(p) {
+      return regionalOuDPP(p) || (p.perfil == 'MEMBRO' && p.get('cargo', '') in ['psicologo', 'assistente_social']);
+    }
 
     // ---------------------------------------------------------------
     // Contas
@@ -225,6 +230,19 @@ service cloud.firestore {
       match /historico/{rev} {
         allow read: if historicoLeitura('fichas', id);
         allow create: if historicoOk('fichas', id, rev);
+        allow update, delete: if false;
+      }
+    }
+
+    // Prontuario psicossocial: um por pessoa; o resto da unidade nao le nem o historico.
+    match /prontuarios/{id} {
+      allow read: if autenticado() && alcanca(eu(), resource.data) && usaProntuario(eu());
+      allow create: if autenticado() && criacaoOk('prontuarios', id, eu()) && daPessoa(request.resource.data) && usaProntuario(eu());
+      allow update: if autenticado() && atualizacaoOk('prontuarios', id, eu()) && mesmaPessoa() && usaProntuario(eu());
+      allow delete: if false;
+      match /historico/{rev} {
+        allow read: if historicoLeitura('prontuarios', id) && usaProntuario(eu());
+        allow create: if historicoOk('prontuarios', id, rev);
         allow update, delete: if false;
       }
     }

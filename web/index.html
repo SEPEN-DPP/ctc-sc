@@ -62,7 +62,10 @@
   .campo-radio { margin-bottom: 0.9rem; }
   .opcoes-radio { display: flex; flex-wrap: wrap; gap: 0.9rem; }
   .rotulo-radio { display: flex; align-items: center; gap: 0.35rem; font-weight: 400; margin-bottom: 0; }
-  .rotulo-radio input[type="radio"] { width: auto; margin-bottom: 0; }
+  .rotulo-radio input[type="radio"], .rotulo-radio input[type="checkbox"] { width: auto; margin-bottom: 0; }
+  .grade-prontuario { display: grid; gap: 0 1rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .grade-prontuario .largura-total { grid-column: 1 / -1; }
+  .tabela-atendimentos td { vertical-align: top; white-space: pre-wrap; }
   .tabela-pip { font-size: 0.85rem; }
   .tabela-pip input, .tabela-pip textarea { margin-bottom: 0; font-size: 0.85rem; }
   .tabela-pip td { vertical-align: top; }
@@ -195,7 +198,9 @@ if (EM_TESTE) {
 // de apagar o trabalho do colega) e quem/quando criou e alterou. Toda gravacao cria
 // junto <colecao>/<id>/historico/<rev> com a copia do registro - trilha de auditoria
 // que ninguem edita nem apaga. Nada e apagado de fato: "remover" marca removido: true.
-const COLECOES = ['unidades', 'membrosCtc', 'pessoas', 'fases', 'fichas', 'pips', 'reclassificacoes'];
+const COLECOES = ['unidades', 'membrosCtc', 'pessoas', 'fases', 'fichas', 'prontuarios', 'pips', 'reclassificacoes'];
+// Escutadas so na unidade ativa (registros mais pesados); prontuarios, so por quem pode le-los.
+const COLECOES_DA_UNIDADE = ['fichas', 'prontuarios'];
 const LISTA_DA_FICHA = {
   servico_social: 'fichasServicoSocial', psicologia: 'fichasPsicologia',
   saude: 'fichasSaude', policia_penal: 'fichasPoliciaPenal'
@@ -209,7 +214,7 @@ const CACHE = {};
 COLECOES.forEach(function (c) { CACHE[c] = new Map(); });
 const CONTAS = new Map();  // usuarios/* no alcance de quem aprova contas (DIR/SR/DPP)
 let ESCUTAS = [];          // onSnapshot ativos (cancelados ao sair ou trocar de perfil)
-let ESCUTA_FICHAS = null;  // fichas: so da unidade ativa (sao os registros mais pesados)
+let ESCUTAS_DA_UNIDADE = []; // onSnapshot de COLECOES_DA_UNIDADE (refeitos ao trocar de unidade)
 let COLECOES_CARREGADAS = new Set();
 let DADOS = dadosPadrao();
 
@@ -224,6 +229,7 @@ function dadosPadrao() {
     fichasPsicologia: [],
     fichasSaude: [],
     fichasPoliciaPenal: [],
+    prontuarios: [],
     pips: [],
     reclassificacoes: []
   };
@@ -264,7 +270,7 @@ function reconstruirDados() {
       tipoEstabelecimento: config ? config.tipoEstabelecimento : 'definitivo', configurada: !!config
     };
     novo.membrosCtc = registrosDaUnidade('membrosCtc').filter(function (m) { return !m.removido; });
-    ['pessoas', 'fases', 'pips', 'reclassificacoes'].forEach(function (c) { novo[c] = registrosDaUnidade(c); });
+    ['pessoas', 'fases', 'prontuarios', 'pips', 'reclassificacoes'].forEach(function (c) { novo[c] = registrosDaUnidade(c); });
     registrosDaUnidade('fichas').forEach(function (f) {
       const lista = LISTA_DA_FICHA[f.tipo];
       if (lista) novo[lista].push(f);
@@ -722,6 +728,13 @@ function ehRegionalOuDPP() { return !!PERFIL && (PERFIL.perfil === 'SR' || PERFI
 function podeEditarFicha(tipo) {
   return ehRegionalOuDPP() || (!!PERFIL && PERFIL.perfil === 'MEMBRO' && FICHA_DO_CARGO[PERFIL.cargo] === tipo);
 }
+// Prontuario psicossocial: dados sensiveis (inclui o exame do estado mental, de uso
+// interno), por isso fica fora das fichas - so psicologo(a) e assistente social da
+// unidade, e SR/DPP, leem e gravam. Mesma regra do firestore.rules (usaProntuario).
+const CARGOS_DO_PRONTUARIO = ['psicologo', 'assistente_social'];
+function podeUsarProntuario() {
+  return ehRegionalOuDPP() || (!!PERFIL && PERFIL.perfil === 'MEMBRO' && CARGOS_DO_PRONTUARIO.indexOf(PERFIL.cargo) !== -1);
+}
 function areasQueEditamFicha(tipo) {
   return CARGOS.filter(function (c) { return FICHA_DO_CARGO[c.valor] === tipo; }).map(function (c) { return c.rotulo.toLowerCase(); }).join(' ou ');
 }
@@ -1017,8 +1030,9 @@ function extrairDadosBpi(texto) {
   return { campos: campos, achados: achados, faltando: faltando };
 }
 
-// Quadro "Preencher com o BPI": escolher ou arrastar o PDF; preenche os campos do ingresso.
-function areaPreencherComBpi(entradas) {
+// Quadro para escolher ou arrastar um PDF (ou TXT) e preencher a tela com ele. O arquivo
+// e lido so neste navegador. aoLer(texto, resultado) preenche e escreve o resumo em resultado.
+function areaLeituraDePdf(titulo, ajuda, nomeDocumento, aoLer) {
   const resultado = el('div', {});
   const inputArquivo = el('input', { type: 'file', accept: '.pdf,.txt,application/pdf,text/plain' });
 
@@ -1031,18 +1045,15 @@ function areaPreencherComBpi(entradas) {
     } catch (e) {
       limpar(resultado);
       const motivo = e.message === 'sem camada de texto'
-        ? 'Este PDF é uma imagem digitalizada (escaneada) e não tem texto para ler. Baixe do sistema a versão gerada por ele, não a escaneada.'
-        : e.message === 'formato' ? 'Use o BPI em PDF (ou TXT).'
+        ? 'Este PDF é uma imagem digitalizada (escaneada) e não tem texto para ler. Use o PDF salvo direto do Word ou do sistema, não o escaneado.'
+        : e.message === 'formato' ? 'Use ' + nomeDocumento + ' em PDF (ou TXT).'
         : e.message === 'offline' ? 'Não foi possível carregar o leitor de PDF. Atualize a página (Ctrl+F5) e tente de novo.'
         : 'Não foi possível abrir este PDF (protegido por senha ou corrompido).';
       resultado.appendChild(mensagemErro(motivo));
       return;
     }
-    const r = extrairDadosBpi(texto);
-    Object.keys(r.campos).forEach(function (k) { entradas[k].value = r.campos[k]; });
     limpar(resultado);
-    if (r.achados.length) resultado.appendChild(mensagemOk('Preenchido a partir do BPI: ' + r.achados.join(', ') + '. Confira antes de registrar.'));
-    if (r.faltando.length) resultado.appendChild(el('p', { class: 'texto-ajuda', texto: 'Não encontrado no BPI (preencha à mão): ' + r.faltando.join(', ') + '.' }));
+    aoLer(texto, resultado);
   }
 
   inputArquivo.addEventListener('change', function () {
@@ -1051,8 +1062,8 @@ function areaPreencherComBpi(entradas) {
     inputArquivo.value = '';
   });
   const quadro = el('div', { class: 'area-bpi' }, [
-    el('strong', { texto: 'Preencher com o BPI' }),
-    el('p', { class: 'texto-ajuda', texto: 'Escolha ou arraste aqui o Boletim Penal (PDF). Os campos abaixo são preenchidos sozinhos; o arquivo é lido só neste computador e não é enviado nem guardado.' }),
+    el('strong', { texto: titulo }),
+    el('p', { class: 'texto-ajuda', texto: ajuda + ' O arquivo é lido só neste computador e não é enviado nem guardado.' }),
     inputArquivo,
     resultado
   ]);
@@ -1065,6 +1076,16 @@ function areaPreencherComBpi(entradas) {
     if (arquivo) processar(arquivo);
   });
   return quadro;
+}
+
+// Quadro "Preencher com o BPI": preenche os campos do ingresso.
+function areaPreencherComBpi(entradas) {
+  return areaLeituraDePdf('Preencher com o BPI', 'Escolha ou arraste aqui o Boletim Penal (PDF). Os campos abaixo são preenchidos sozinhos.', 'o BPI', function (texto, resultado) {
+    const r = extrairDadosBpi(texto);
+    Object.keys(r.campos).forEach(function (k) { entradas[k].value = r.campos[k]; });
+    if (r.achados.length) resultado.appendChild(mensagemOk('Preenchido a partir do BPI: ' + r.achados.join(', ') + '. Confira antes de registrar.'));
+    if (r.faltando.length) resultado.appendChild(el('p', { class: 'texto-ajuda', texto: 'Não encontrado no BPI (preencha à mão): ' + r.faltando.join(', ') + '.' }));
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -1162,6 +1183,8 @@ function renderizarDetalhePessoa(container, pplId) {
   container.appendChild(areaFases);
   renderizarFasesDaPessoa(areaFases, pessoa);
 
+  if (podeUsarProntuario()) renderizarProntuario(container, pessoa);
+
   container.appendChild(el('h3', { texto: 'Instrumento Unificado de Classificação, PIP e Reclassificação' }));
   renderizarFicha(container, pessoa, 'servico_social');
   renderizarFicha(container, pessoa, 'psicologia');
@@ -1217,7 +1240,7 @@ const CTC_FICHAS_DEF = {
     titulo: 'Ficha 1 — Módulo I / Serviço Social',
     chaveLista: 'fichasServicoSocial',
     profissionalRotulo: 'Assistente Social',
-    registroRotulo: 'CRESS',
+    registroRotulo: 'Matrícula',
     secoes: [
       { titulo: '1. Identificação e vínculos', campos: [
         { chave: 'nacionalidade', tipo: 'texto', rotulo: 'Nacionalidade' },
@@ -1268,7 +1291,7 @@ const CTC_FICHAS_DEF = {
     titulo: 'Ficha 2 — Módulo I / Psicologia',
     chaveLista: 'fichasPsicologia',
     profissionalRotulo: 'Psicólogo(a)',
-    registroRotulo: 'CRP',
+    registroRotulo: 'Matrícula',
     secoes: [
       { titulo: '1. Condições da entrevista', campos: [
         { chave: 'presencial', tipo: 'check', rotulo: 'Presencial' },
@@ -1454,6 +1477,24 @@ function construirCampoFicha(campoDef) {
     const c = campoRadio(campoDef.rotulo, campoDef.opcoes);
     return { wrap: c.wrap, obterValor: c.obterValor, definirValor: c.definirValor };
   }
+  if (campoDef.tipo === 'data') {
+    const c = campoTexto(campoDef.rotulo, { tipo: 'date' });
+    return { wrap: c.wrap, obterValor: function () { return c.input.value; }, definirValor: function (v) { c.input.value = v || ''; } };
+  }
+  if (campoDef.tipo === 'multi') {
+    // varias marcacoes na mesma linha (valor: lista dos valores marcados)
+    const linha = el('div', { class: 'opcoes-radio' });
+    const inputs = campoDef.opcoes.map(function (o) {
+      const input = el('input', { type: 'checkbox', value: o.valor });
+      linha.appendChild(el('label', { class: 'rotulo-radio' }, [input, ' ' + o.rotulo]));
+      return input;
+    });
+    return {
+      wrap: el('div', { class: 'campo-radio' }, [el('label', { texto: campoDef.rotulo }), linha]),
+      obterValor: function () { return inputs.filter(function (i) { return i.checked; }).map(function (i) { return i.value; }); },
+      definirValor: function (v) { const lista = Array.isArray(v) ? v : []; inputs.forEach(function (i) { i.checked = lista.indexOf(i.value) !== -1; }); }
+    };
+  }
   throw new Error('Tipo de campo desconhecido: ' + campoDef.tipo);
 }
 
@@ -1512,7 +1553,25 @@ function renderizarFicha(container, pessoa, tipo) {
 
   const cabecalho = el('div', { class: 'grade grade-3' }, [profissionalNome.wrap, registro ? registro.wrap : null, dataReferencia.wrap].filter(Boolean));
 
-  const conteudo = [autoria, areaOk, cabecalho]
+  // Fichas 1-3: completa os campos vazios com o que o Prontuario Psicossocial ja registra
+  const sugerir = SUGESTOES_DO_PRONTUARIO[tipo];
+  const botaoProntuario = sugerir && podeEditar && podeUsarProntuario() ? botao('Pré-preencher com o Prontuário Psicossocial', 'botao-secundario', function () {
+    limpar(areaOk);
+    const prontuario = DADOS.prontuarios.find(function (r) { return r.pplId === pessoa.id; });
+    if (!prontuario) { areaOk.appendChild(mensagemErro('Esta pessoa ainda não tem Prontuário Psicossocial salvo.')); return; }
+    const sugestao = sugerir(prontuario.valores || {});
+    let preenchidos = 0;
+    secoesRenderizadas.forEach(function (s) {
+      Object.keys(s.campos).forEach(function (chave) {
+        if (sugestao[chave] && !s.campos[chave].obterValor()) { s.campos[chave].definirValor(sugestao[chave]); preenchidos += 1; }
+      });
+    });
+    areaOk.appendChild(preenchidos
+      ? mensagemOk(preenchidos + ' campo(s) vazio(s) preenchido(s) com o Prontuário Psicossocial. Revise antes de salvar.')
+      : el('p', { class: 'texto-ajuda', texto: 'Nada a preencher: os campos que o prontuário cobre já estão preenchidos, ou o prontuário ainda não tem essas informações.' }));
+  }) : null;
+
+  const conteudo = [autoria, areaOk, botaoProntuario, cabecalho]
     .concat(secoesRenderizadas.map(function (s) { return s.fieldset; }))
     .concat([podeEditar ? salvar : el('p', { class: 'texto-ajuda', texto: 'Só quem é ' + areasQueEditamFicha(tipo) + ' na unidade (ou a SR e o DPP) edita esta ficha. Você pode consultá-la.' })]);
 
@@ -1520,6 +1579,694 @@ function renderizarFicha(container, pessoa, tipo) {
   if (!podeEditar) desabilitarCampos(cartaoFicha);
   container.appendChild(cartaoFicha);
 }
+
+// ---------------------------------------------------------------------
+// Prontuario Psicossocial (modelos completo e resumido do Presidio Regional de Criciuma)
+// ---------------------------------------------------------------------
+// Um prontuario por pessoa (colecao prontuarios, documento <pplId>). Os campos seguem o
+// modelo completo, na ordem dele; "pdf" e o rotulo como esta impresso no modelo (usado
+// para ler o PDF preenchido) e null quando o campo nao e lido do modelo completo. Os
+// campos que so existem no modelo resumido levam soResumido (e nao saem na impressao
+// do completo).
+function chaveDe(texto) {
+  return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
+const CTC_PRONTUARIO_DEF = (function () {
+  const SN = ['Sim', 'Não'];
+  const SNNS = ['Sim', 'Não', 'Não sabe'];
+  function opcoes(rotulos) { return rotulos.map(function (r) { return { valor: chaveDe(r), rotulo: r }; }); }
+  function texto(chave, rotulo, pdf) { return { chave: chave, tipo: 'texto', rotulo: rotulo, pdf: pdf }; }
+  function longo(chave, rotulo, pdf) { return { chave: chave, tipo: 'textarea', rotulo: rotulo, pdf: pdf }; }
+  function data(chave, rotulo, pdf) { return { chave: chave, tipo: 'data', rotulo: rotulo, pdf: pdf }; }
+  function radio(chave, rotulo, lista, pdf) { return { chave: chave, tipo: 'radio', rotulo: rotulo, opcoes: opcoes(lista), pdf: pdf }; }
+  function multi(chave, rotulo, lista, pdf, marcaAntes) { return { chave: chave, tipo: 'multi', rotulo: rotulo, opcoes: opcoes(lista), pdf: pdf, marcaAntes: !!marcaAntes }; }
+  function resumido(campo) { campo.pdf = null; campo.soResumido = true; return campo; }
+  function obs(chave) { return longo(chave, 'Observações', 'Observações:'); }
+
+  return { secoes: [
+    { titulo: '1. Identificação', pdf: '1. IDENTIFICAÇÃO', campos: [
+      radio('genero', 'Gênero', ['Masculino', 'Feminino', 'Prefiro não dizer', 'Outro'], 'Gênero:'),
+      texto('genero_qual', 'Gênero — outro, qual?', 'Qual?'),
+      radio('orientacao_sexual', 'Orientação sexual', ['Heterossexual', 'Homossexual', 'Bissexual', 'Outro'], 'Orientação Sexual:'),
+      texto('orientacao_sexual_qual', 'Orientação sexual — outra, qual?', 'Qual?'),
+      radio('cor', 'Cor', ['Branca', 'Negra', 'Parda', 'Amarela', 'Indígena', 'Outros'], 'Cor:'),
+      texto('alcunha', 'Alcunha/apelido', 'Alcunha/apelido:'),
+      data('data_nascimento', 'Data de nascimento', 'Data de nascimento:'),
+      texto('idade', 'Idade', 'Idade:'),
+      texto('profissao', 'Profissão', 'Profissão:'),
+      texto('religiao', 'Religião', 'Religião:'),
+      texto('naturalidade', 'Naturalidade', 'Naturalidade:'),
+      texto('nacionalidade', 'Nacionalidade', 'Nacionalidade:'),
+      resumido(radio('procedencia', 'Procedência', ['Rural', 'Semi-rural', 'Urbana'])),
+      texto('pai', 'Pai', 'Pai:'),
+      radio('pai_vivo', 'Pai vivo?', SN, 'Vivo?'),
+      texto('pai_motivo_falecimento', 'Pai — motivo do falecimento', 'Motivo do falecimento:'),
+      texto('pai_ocupacao', 'Pai — ocupação', 'Ocupação:'),
+      texto('mae', 'Mãe', 'Mãe:'),
+      radio('mae_viva', 'Mãe viva?', SN, 'Vivo?'),
+      texto('mae_motivo_falecimento', 'Mãe — motivo do falecimento', 'Motivo do falecimento:'),
+      texto('mae_ocupacao', 'Mãe — ocupação', 'Ocupação:'),
+      radio('pais_separados', 'Pais separados?', SN, 'Separados?'),
+      texto('pais_separados_motivo', 'Motivo da separação dos pais', 'Motivo:'),
+      { chave: 'pais_nunca_moraram_juntos', tipo: 'check', rotulo: 'Nunca moraram juntos', pdf: 'Nunca moraram juntos', marcaAntes: true },
+      texto('idade_separacao_pais', 'Quantos anos você tinha?', 'Quantos anos você tinha?'),
+      texto('num_irmaos', 'Nº de irmãos', 'Nº de irmãos?'),
+      radio('irmao_falecido', 'Algum irmão falecido?', SN, 'Algum falecido?'),
+      texto('irmao_falecido_motivo', 'Irmão falecido — motivo', 'Motivo:'),
+      radio('estado_civil', 'Estado civil', ['Solteiro(a)', 'Casado(a)', 'Viúvo(a)', 'Divorciado(a)', 'União Estável'], 'Estado Civil:'),
+      radio('tem_companheiro', 'Tem companheira(o)?', SN, 'Tem companheira(o)?'),
+      texto('tempo_juntos', 'Há quanto tempo estão juntos?', 'Há quanto tempo estão juntos?'),
+      texto('companheiro_nome', 'Companheira(o) — nome completo', 'Nome completo:'),
+      texto('companheiro_idade', 'Companheira(o) — idade', 'Idade:'),
+      radio('outras_unioes', 'Já teve outras uniões?', SN, 'Já teve outras uniões:'),
+      texto('outras_unioes_quantas', 'Quantas uniões?', 'Quantas?'),
+      texto('motivo_separacoes', 'Motivo(s) da(s) separação(ões)', 'Motivo(s) da(s) separação(s)?'),
+      radio('possui_filhos', 'Possui filhos?', SN, 'Possui filhos?'),
+      texto('num_filhos', 'Quantos filhos?', 'Quantos:'),
+      resumido(radio('filhos_mesma_mae_pai', 'Filhos da mesma mãe (pai)?', SN)),
+      radio('filho_falecido', 'Algum filho falecido?', SN, 'Algum falecido?'),
+      texto('filho_falecido_motivo', 'Filho falecido — motivo', 'Motivo:'),
+      texto('filhos_com_quem', 'Com quem eles estão?', 'Com quem eles estão?'),
+      texto('filhos_como_estao', 'Como acha que eles estão?', 'Como acha que eles estão?'),
+      texto('idade_constituiu_familia', 'Com que idade constituiu família?', 'Com que idade constituiu família?'),
+      obs('obs_identificacao')
+    ]},
+    { titulo: '2. Escolaridade', pdf: '2. ESCOLARIDADE', campos: [
+      texto('serie', 'Até que série estudou?', 'Até que série estudou?'),
+      texto('reprovou', 'Reprovou?', 'Reprovou?'),
+      radio('sabe_ler', 'Sabe ler?', ['Sim', 'Não', 'Com dificuldades'], 'Sabe ler?'),
+      radio('sabe_escrever', 'Sabe escrever?', ['Sim', 'Não', 'Com dificuldades'], 'Sabe escrever?'),
+      texto('por_que_nao_prosseguiu', 'Por que não prosseguiu?', 'Por que não prosseguiu?'),
+      radio('interesse_continuar', 'Tem interesse em continuar?', SN, 'Tem interesse em continuar?'),
+      texto('interesse_continuar_porque', 'Por quê?', 'porquê?'),
+      obs('obs_escolaridade')
+    ]},
+    { titulo: '3. Endereço atual', pdf: '3. ENDEREÇO ATUAL', campos: [
+      texto('bairro', 'Bairro', 'Bairro:'),
+      texto('cidade_uf', 'Cidade/UF', 'Cidade/UF:'),
+      texto('ponto_referencia', 'Ponto de referência', 'Ponto de referência:'),
+      texto('telefone', 'Telefone', 'Telefone:'),
+      texto('falar_com', 'Falar com', 'Falar com:'),
+      texto('mora_com', 'Mora com quem?', 'Mora com quem?'),
+      resumido(texto('num_pessoas_casa', 'Nº de pessoas na casa')),
+      resumido(radio('residencia_fixa', 'Residência fixa?', SN)),
+      radio('moradia', 'Moradia', ['Própria', 'Alugada', 'Outros'], 'Moradia:'),
+      texto('moradia_outros', 'Moradia — outros', null),
+      obs('obs_endereco')
+    ]},
+    { titulo: '4. Histórico', pdf: '4. HISTÓRICO', campos: [
+      texto('criado_por', 'Por quem foi criado?', 'Por quem foi criado?'),
+      longo('relacoes_familia', 'Como eram as relações na família?', 'Como eram as relações na família?'),
+      longo('infancia_adolescencia', 'Como foi sua infância e adolescência?', 'Como foi sua infância e adolescência?'),
+      texto('quem_sustentava', 'Quem sustentava a casa?', 'Quem sustentava a casa?'),
+      radio('contribuia_financeiramente', 'Quando criança, contribuía financeiramente?', SN, 'Quando criança, você contribuía financeiramente?'),
+      texto('contribuia_como', 'Como contribuía?', 'Como?'),
+      radio('violencia_infancia', 'Na infância sofreu algum tipo de violência?', SN, 'Na infância sofreu algum tipo de violência?'),
+      texto('violencia_infancia_tipo', 'De que tipo?', 'De que tipo?'),
+      resumido(texto('historico_violencia', 'Histórico de violência')),
+      longo('maior_decepcao', 'Maior decepção e/ou tristeza', 'Maior decepção e/ou tristeza?'),
+      longo('maior_alegria', 'Maior alegria', 'Maior alegria?'),
+      obs('obs_historico')
+    ]},
+    { titulo: '5. Saúde', pdf: '5. SAÚDE', campos: [
+      radio('usa_medicamentos', 'Faz uso de medicamentos?', SNNS, 'Faz uso de medicamentos?'),
+      texto('medicamentos', 'Quais medicamentos?', 'Quais:'),
+      radio('doenca', 'Já teve/tem alguma doença?', SNNS, 'Já teve/tem alguma doença?'),
+      texto('doencas', 'Quais doenças?', 'Quais?'),
+      texto('doencas_quando', 'Doenças — quando?', 'Quando?'),
+      texto('fez_tratamento', 'Fez tratamento?', 'Fez tratamento?'),
+      resumido(texto('tratamento_tempo', 'Tratamento — quanto tempo?')),
+      radio('internacao', 'Internação?', SNNS, 'Internação?'),
+      texto('internacao_quando', 'Internação — quando?', 'Quando?'),
+      texto('internacao_motivo', 'Internação — motivo', 'Motivo:'),
+      longo('sintomas', 'Apresenta algum sintoma atualmente (tontura, tremor, desmaio, abstinência, alucinações, outros)? Quais?', 'Atualmente apresenta algum sintoma? (Tontura, tremor, desmaio, abstinência, alucinações, outros)? Quais?'),
+      radio('pensamentos_morte', 'Tem pensamentos de morte?', SN, 'Tem pensamentos de morte?'),
+      radio('tentativa_suicidio', 'Já teve alguma tentativa de suicídio?', SN, 'Já teve alguma tentativa de suicídio?'),
+      texto('tentativa_suicidio_quando', 'Tentativa de suicídio — quando?', 'Quando?'),
+      radio('acompanhamento_psi', 'Já fez acompanhamento psiquiátrico/psicológico?', SN, 'Já fez algum acompanhamento psiquiátrico/ psicológico?'),
+      texto('acompanhamento_psi_quando', 'Acompanhamento — quando?', 'Quando?'),
+      texto('acompanhamento_psi_motivo', 'Acompanhamento — motivo', 'Motivo:'),
+      radio('doenca_mental_familia', 'Caso de doença mental na família?', SNNS, 'Caso de doença mental na família?'),
+      texto('doenca_mental_familia_quem', 'Doença mental na família — quem?', 'Quem?'),
+      multi('doencas_hereditarias', 'Doença hereditária na família', ['Câncer', 'Hipertensão Arterial', 'Diabetes', 'Cardiopatias'], 'Doença hereditária na família?'),
+      radio('padrao_sono', 'Padrão do sono', ['Regular', 'Irregular'], 'Padrão do sono:'),
+      radio('alimentacao', 'Alimentação', ['Regular', 'Irregular'], 'Alimentação:'),
+      obs('obs_saude')
+    ]},
+    { titulo: '6. Vida anterior ao cárcere', pdf: '6. VIDA ANTERIOR AO CÁRCERE', campos: [
+      radio('familiar_preso', 'Alguém da família já foi preso?', SN, 'Alguém da sua família já foi preso?'),
+      texto('familiar_preso_quem', 'Familiar preso — quem?', 'Quem?'),
+      texto('familiar_preso_motivo', 'Familiar preso — motivo', 'Motivo:'),
+      texto('familiar_preso_onde', 'Familiar preso — onde?', 'Onde?'),
+      radio('familiar_ainda_preso', 'Ainda está preso?', SN, 'Ainda está preso?'),
+      radio('visitava_familiar', 'Você o(s) visitava?', SN, 'Você o(s) visitava?'),
+      radio('ferido_arma', 'Já foi ferido por algum tipo de arma?', SN, 'Você já foi ferido por algum tipo de arma?'),
+      texto('ferido_arma_qual', 'Arma — qual?', 'Qual?'),
+      texto('ferido_arma_motivo', 'Ferimento — motivo', 'Motivo:'),
+      radio('trabalhava', 'Antes de ser preso trabalhava?', SN, 'Antes de ser preso você trabalhava?'),
+      texto('trabalhava_em', 'Em quê?', 'Em quê?'),
+      resumido(texto('inicio_vida_laborativa', 'Início da vida laborativa')),
+      texto('dependiam_trabalho', 'Alguém, além de você, dependia do seu trabalho? Quem?', 'Alguém, além de você, dependia do seu trabalho? Quem?'),
+      texto('sustento_hoje', 'Como se sustentam hoje?', 'Como se sustentam hoje?'),
+      radio('usava_substancias', 'Antes de ser preso, fazia uso de substâncias psicoativas?', SN, 'Antes de ser preso, você fazia uso de substâncias psicoativas?'),
+      multi('substancias', 'Substâncias', ['Álcool', 'Cigarro', 'Cocaína', 'Maconha', 'Crack', 'Outros'], 'Álcool', true),
+      texto('substancias_outras', 'Outras substâncias', null),
+      texto('idade_inicio_uso', 'Com que idade começou a usar?', 'Com que idade começou a usar?'),
+      texto('frequencia_uso', 'Com que frequência?', 'Com que frequência?'),
+      texto('por_que_usava', 'Por que usava?', 'Por que usava?'),
+      radio('usava_como', 'Você usava', ['Sozinho', 'Em grupo'], 'Você usava:'),
+      radio('tentou_parar', 'Já tentou parar?', SN, 'Você já tentou parar?'),
+      radio('conseguiu_parar', 'Caso positivo, conseguiu?', SN, 'Caso positivo, conseguiu?'),
+      texto('tempo_parou', 'Há quanto tempo parou de usar?', 'Há quanto tempo parou de usar?'),
+      radio('usou_apos_prisao', 'Depois de preso, continuou/voltou a usar?', SN, 'Depois de preso, você continuou/voltou a usar?'),
+      radio('quer_ajuda_parar', 'Gostaria de receber ajuda para parar de usar?', SN, 'Gostaria de receber ajuda para parar de usar?'),
+      obs('obs_vida_anterior')
+    ]},
+    { titulo: '7. Dados da prisão', pdf: '7. DADOS DA PRISÃO', campos: [
+      data('data_prisao', 'Data da prisão', 'Data da prisão:'),
+      texto('artigo', 'Artigo', 'Artigo:'),
+      longo('motivo_delito', 'Qual foi o motivo para cometer o delito?', 'Qual foi o motivo para cometer o delito?'),
+      longo('sentimento_ao_ser_preso', 'Como se sentiu ao ser preso?', 'Como você se sentiu ao ser preso?'),
+      radio('condenado', 'Condenado?', SNNS, 'Condenado?'),
+      texto('tempo_pena', 'Tempo de pena', 'Tempo de pena?'),
+      texto('regime_inicial', 'Regime inicial', 'Regime inicial:'),
+      radio('motivo_prisao', 'Motivo da prisão', ['Mandado de prisão', 'Flagrante', 'Captura', 'Outros'], 'Motivo da prisão:'),
+      radio('antecedentes', 'Antecedentes', SN, 'Antecedentes:'),
+      texto('antecedentes_quais', 'Antecedentes — qual(is)?', 'Qual(is)?'),
+      resumido(radio('reincidente', 'Reincidente?', SN)),
+      texto('idade_inicio_delitos', 'Idade em que começou a delinquir', 'Qual a idade que começou a delinquir?'),
+      radio('pena_menoridade', 'Já cumpriu pena na menoridade?', SN, 'Já cumpriu pena na menoridade?'),
+      texto('menoridade_onde', 'Menoridade — onde?', 'Onde?'),
+      texto('menoridade_tempo', 'Menoridade — quanto tempo?', 'Quanto tempo?'),
+      texto('menoridade_infracao', 'Menoridade — infração', 'Infração:'),
+      texto('ups_anteriores', 'Unidade prisional onde já cumpriu pena', 'Unidade prisional onde já cumpriu pena:'),
+      texto('tempo_nesta_up', 'Há quanto tempo está nesta UP', 'Está a quanto tempo nesta UP:'),
+      texto('tempo_regime_fechado', 'Tempo para cumprir em regime fechado', 'Tempo para cumprir em Regime Fechado:'),
+      texto('tempo_regime_semiaberto', 'Tempo para cumprir em semiaberto', 'Semiaberto:'),
+      radio('recebe_visitas', 'Atualmente recebe visita(s)?', SN, 'Atualmente recebe visita(s)?'),
+      texto('visitas_porque', 'Se não recebe, por quê?', 'por quê?'),
+      texto('visitas_quem', 'Visitas — de quem?', 'De quem?'),
+      texto('visitas_frequencia', 'Visitas — frequência/tipo', 'Frequência/Tipo:'),
+      obs('obs_prisao')
+    ]},
+    { titulo: '8. Evolução do comportamento prisional', pdf: '8. EVOLUÇÃO DO COMPORTAMENTO PRISIONAL', campos: [
+      longo('sentimento_delito', 'Sentimento hoje em relação ao delito cometido', 'Qual o sentimento hoje em relação ao delito cometido?'),
+      radio('sentenca', 'Sentença inicial', ['Justa', 'Injusta'], 'Sentença inicial:'),
+      texto('sentenca_porque', 'Sentença — por quê?', 'Por quê?'),
+      radio('rebeliao', 'Já participou de alguma rebelião?', SN, 'Já participou de alguma rebelião?'),
+      texto('rebeliao_obs', 'Rebelião — obs.', 'Obs.:'),
+      radio('fuga', 'Já teve alguma fuga?', SN, 'Já teve alguma fuga?'),
+      texto('fugas_quantas', 'Quantas fugas?', 'Quantas?'),
+      radio('sancao_disciplinar', 'Sanção disciplinar?', SN, 'Sanção disciplinar?'),
+      texto('sancoes_quantas', 'Quantas sanções?', 'Quantas?'),
+      texto('sancao_motivo', 'Sanção — motivo', 'Motivo:'),
+      resumido(texto('historico_fuga_disciplinar', 'Histórico de fuga/evasão/incidente disciplinar')),
+      longo('problema_relacionamento', 'Tem algum problema de relacionamento dentro do sistema prisional?', 'Tem algum problema de relacionamento dentro do sistema prisional?'),
+      texto('estudou_up', 'Já estudou em alguma UP?', 'Já estudou em alguma UP?'),
+      texto('atividade_laborativa_up', 'Já participou de alguma atividade laborativa?', 'Já participou de alguma atividade laborativa?'),
+      radio('interesse_atividades', 'Tem interesse em participar de atividades existentes nesta UP?', ['Sim', 'Não', 'Talvez'], 'Tem interesse em participar de atividades existentes nesta UP?'),
+      longo('projetos_futuros', 'Projetos futuros', 'Projetos futuros:'),
+      obs('obs_comportamento'),
+      resumido(longo('observacoes_gerais', 'Observações gerais (modelo resumido)'))
+    ]},
+    { titulo: '9. Uso interno — Exame do Estado Mental', pdf: '9. USO INTERNO', campos: [
+      radio('aparencia', 'Aparência geral', ['Arrumado', 'Desleixado'], 'Aparência Geral:'),
+      texto('aparencia_obs', 'Aparência — obs.', 'Obs:'),
+      multi('comportamento_motor', 'Comportamento motor', ['Ansioso', 'Tiques', 'Tremores'], 'Comportamento Motor:'),
+      texto('comportamento_motor_outros', 'Comportamento motor — outros', 'Outros:'),
+      multi('atitude', 'Atitude durante a entrevista', ['Irritado', 'Manipulador', 'Defensivo', 'Calmo'], 'Atitude durante a entrevista:'),
+      texto('atitude_outros', 'Atitude — outros', 'Outros:'),
+      multi('humor', 'Humor', ['Feliz', 'Tenso', 'Acanhado', 'Deprimido', 'Triste', 'Apático'], 'Humor:'),
+      texto('humor_outros', 'Humor — outros', 'Outros:'),
+      radio('afeto', 'Afeto', ['Instável', 'Embotado', 'Adequado ao conteúdo', 'Inapropriado'], 'Afeto:'),
+      multi('fala', 'Fala', ['Lenta', 'Rápida', 'Aflita', 'Tagarela', 'Gaga', 'Pausada', 'Espontânea'], 'Fala:'),
+      radio('alucinacoes', 'Transtornos perceptivos: alucinações', SN, 'Transtornos Perceptivos: Alucinações'),
+      texto('alucinacoes_quais', 'Alucinações — quais?', 'Quais?'),
+      radio('delirios', 'Conteúdo do pensamento: delírios/obsessões/fobias', SN, 'Conteúdo do Pensamento: Delírios/ Obsessões/Fobias'),
+      texto('delirios_quais', 'Delírios/obsessões/fobias — quais?', 'Quais?'),
+      multi('processo_pensamento', 'Processo de pensamento', ['Fuga de ideias', 'Inibição', 'Prolixidade', 'Perseveração'], 'Processo de Pensamento:'),
+      radio('nivel_consciencia', 'Sensório: nível de consciência', ['Clara', 'Confusa'], 'Sensório: Nível de consciência'),
+      radio('memoria_remota', 'Memória remota', SN, 'Memória: Remota'),
+      radio('memoria_recente', 'Memória recente', SN, 'Recente'),
+      radio('memoria_imediata', 'Memória imediata', SN, 'Imediata'),
+      radio('concentracao_calculos', 'Concentração e cálculos', SN, 'Concentração e Cálculos:'),
+      radio('informacao_inteligencia', 'Informação e inteligência', SN, 'Informação e Inteligência:'),
+      radio('discernimento', 'Discernimento', SN, 'Discernimento:'),
+      radio('negacao_doenca', 'Nível de insight: negação da doença', SN, 'Nível de Insight: Negação da Doença'),
+      radio('culpa_fatores_externos', 'Culpa a fatores externos', SN, 'Culpa a fatores externos'),
+      radio('tolerancia_frustracao', 'Tolerância à frustração', SN, 'Tolerância a Frustração:'),
+      radio('autoestima', 'Autoestima', ['Baixa', 'Alta', 'Adequada'], 'Autoestima:'),
+      texto('testes_aplicados', 'Testes aplicados', 'Testes Aplicados:'),
+      longo('resultado_testes', 'Resultado', 'Resultado:'),
+      longo('evolucao', 'Evolução', 'Evolução:')
+    ]}
+  ]};
+})();
+
+const CAMPO_DO_PRONTUARIO = {};
+CTC_PRONTUARIO_DEF.secoes.forEach(function (s) { s.campos.forEach(function (c) { CAMPO_DO_PRONTUARIO[c.chave] = c; }); });
+
+function rotuloDaOpcao(chave, valor) {
+  const campo = CAMPO_DO_PRONTUARIO[chave];
+  const lista = Array.isArray(valor) ? valor : (valor ? [valor] : []);
+  return lista.map(function (v) {
+    const o = campo && campo.opcoes ? campo.opcoes.find(function (x) { return x.valor === v; }) : null;
+    return o ? o.rotulo : v;
+  }).join(', ');
+}
+function juntarLinhas(lista) { return lista.filter(function (l) { return l && String(l).trim(); }).join('\n'); }
+function comRotulo(rotulo, valor) { return valor && String(valor).trim() ? rotulo + ': ' + valor : ''; }
+
+// Modelo resumido: o mesmo prontuario em menos linhas. Cada item mostra um campo (chave)
+// ou um resumo de varios (de); pdf e o rotulo no modelo resumido, para a leitura do PDF.
+// simNao: se o que foi escrito comeca com sim/nao, marca tambem esse campo de opcao.
+const CTC_PRONTUARIO_RESUMIDO = [
+  { titulo: '1. Dados de Identificação', pdf: '1. Dados de Identificação', linhas: [
+    [{ rotulo: 'Nome', de: function (v, pessoa) { return pessoa.nome; } }, { rotulo: 'Vulgo', chave: 'alcunha', pdf: 'Vulgo:' }],
+    [{ rotulo: 'Idade', chave: 'idade', pdf: 'Idade:' }, { rotulo: 'Gênero', chave: 'genero', pdf: 'Gênero:' }, { rotulo: 'Cor', chave: 'cor', pdf: 'Cor:' }],
+    [{ rotulo: 'Naturalidade', chave: 'naturalidade', pdf: 'Naturalidade:' }, { rotulo: 'Procedência', chave: 'procedencia', pdf: 'Procedência:' }],
+    [{ rotulo: 'Residência Fixa', chave: 'residencia_fixa', pdf: 'Residência Fixa:' },
+      { rotulo: 'Local', chave: 'cidade_uf', pdf: 'Local:', de: function (v) { return [v.bairro, v.cidade_uf].filter(Boolean).join(', '); } }],
+    [{ rotulo: 'Estado Civil', chave: 'estado_civil', pdf: 'Estado Civil:' }],
+    [{ rotulo: 'Escolaridade', chave: 'serie', pdf: 'Escolaridade:' }, { rotulo: 'Profissão', chave: 'profissao', pdf: 'Profissão:' }],
+    [{ rotulo: 'Início da Vida Laborativa', chave: 'inicio_vida_laborativa', pdf: 'Início da Vida Laborativa:' }, { rotulo: 'Religião', chave: 'religiao', pdf: 'Religião:' }]
+  ]},
+  { titulo: '2. Dados da Família', pdf: '2. Dados da Família', linhas: [
+    [{ rotulo: 'Nº. de Pessoas na casa', chave: 'num_pessoas_casa', pdf: 'Nº. de Pessoas na casa:' }, { rotulo: 'Parentesco', chave: 'mora_com', pdf: 'Parentesco:' }],
+    [{ rotulo: 'Filiação - Pai', chave: 'pai', pdf: 'Filiação - Pai:' }, { rotulo: 'Mãe', chave: 'mae', pdf: 'Mãe:' }],
+    [{ rotulo: 'Cônjuge', chave: 'companheiro_nome', pdf: 'Cônjuge:' }],
+    [{ rotulo: 'Nº. de Filhos', chave: 'num_filhos', pdf: 'Nº. de Filhos:' }, { rotulo: 'Mesma mãe (pai)', chave: 'filhos_mesma_mae_pai', pdf: 'Mesma mãe (pai):' }, { rotulo: 'Nº. de Irmãos', chave: 'num_irmaos', pdf: 'Nº. de Irmãos:' }],
+    [{ rotulo: 'Visitas', chave: 'visitas_quem', pdf: 'Visitas:', simNao: 'recebe_visitas',
+        de: function (v) { return [rotuloDaOpcao('recebe_visitas', v.recebe_visitas), v.visitas_quem].filter(Boolean).join(' — '); } },
+      { rotulo: 'Freqüência/Tipo', chave: 'visitas_frequencia', pdf: 'Freqüência/Tipo:' }],
+    [{ rotulo: 'Telefone para contato', chave: 'telefone', pdf: 'Telefone para contato:' }],
+    [{ rotulo: 'Histórico de violência', chave: 'historico_violencia', pdf: 'Histórico de violência:',
+        de: function (v) {
+          return v.historico_violencia || [v.violencia_infancia === 'sim' ? 'Violência na infância' + (v.violencia_infancia_tipo ? ' (' + v.violencia_infancia_tipo + ')' : '') : '',
+            v.ferido_arma === 'sim' ? 'Ferido por arma' + (v.ferido_arma_qual ? ' (' + v.ferido_arma_qual + ')' : '') : ''].filter(Boolean).join('; ');
+        } }]
+  ]},
+  { titulo: '3. Dados de Saúde', pdf: '3. Dados de Saúde', linhas: [
+    [{ rotulo: 'Tratamento', chave: 'fez_tratamento', pdf: 'Qual:' }],
+    [{ rotulo: 'Quanto Tempo', chave: 'tratamento_tempo', pdf: 'Quanto Tempo:' }, { rotulo: 'Medicamentos', chave: 'medicamentos', pdf: 'Medicamentos:' }],
+    [{ rotulo: 'Já usou drogas', chave: 'usava_substancias', pdf: 'Já usou drogas:' },
+      { rotulo: 'Qual', chave: 'substancias_outras', pdf: 'Qual:', de: function (v) { return [rotuloDaOpcao('substancias', v.substancias), v.substancias_outras].filter(Boolean).join(', '); } }],
+    [{ rotulo: 'Início', chave: 'idade_inicio_uso', pdf: 'Início:' }, { rotulo: 'Freqüência', chave: 'frequencia_uso', pdf: 'Freqüência:' }, { rotulo: 'Sintomas de Abstinência', chave: 'sintomas', pdf: 'Sintomas de Abstinência:' }],
+    [{ rotulo: 'Internação', chave: 'internacao_motivo', pdf: 'Internação:', simNao: 'internacao',
+        de: function (v) { return [rotuloDaOpcao('internacao', v.internacao), v.internacao_quando, v.internacao_motivo].filter(Boolean).join(' — '); } },
+      { rotulo: 'Acompanhamento psicológico/psiquiátrico', chave: 'acompanhamento_psi', pdf: 'Acompanhamento psicológico/psiquiátrico:' }],
+    [{ rotulo: 'Padrão de sono', chave: 'padrao_sono', pdf: 'Padrão de sono:' },
+      { rotulo: 'Tentativa de suicídio', chave: 'tentativa_suicidio_quando', pdf: 'Tentativa de suicídio:', simNao: 'tentativa_suicidio',
+        de: function (v) { return [rotuloDaOpcao('tentativa_suicidio', v.tentativa_suicidio), v.tentativa_suicidio_quando].filter(Boolean).join(' — '); } }],
+    [{ rotulo: 'Alimentação', chave: 'alimentacao', pdf: 'Alimentação:' },
+      { rotulo: 'Ideação Suicida', pdf: 'Ideação Suicida:', simNao: 'pensamentos_morte', de: function (v) { return rotuloDaOpcao('pensamentos_morte', v.pensamentos_morte); } }]
+  ]},
+  { titulo: '4. Dados da Reclusão', pdf: '4. Dados da Reclusão', linhas: [
+    [{ rotulo: 'Artigo', chave: 'artigo', pdf: 'Artigo:' }, { rotulo: 'Reincidente', chave: 'reincidente', pdf: 'Reincidente:' }],
+    [{ rotulo: 'Pena Total', chave: 'tempo_pena', pdf: 'Pena Total:' }, { rotulo: 'Tempo de Reclusão', chave: 'tempo_nesta_up', pdf: 'Tempo de Reclusão:' }, { rotulo: 'Regime Inicial', chave: 'regime_inicial', pdf: 'Regime Inicial:' }],
+    [{ rotulo: 'Início da Prática Criminal', chave: 'idade_inicio_delitos', pdf: 'Início da Prática Criminal:' }],
+    [{ rotulo: 'Histórico de fuga/evasão/incidente disciplinar', chave: 'historico_fuga_disciplinar', pdf: 'Histórico de fuga/evasão/incidente disciplinar:',
+        de: function (v) {
+          return v.historico_fuga_disciplinar || [v.fuga === 'sim' ? 'Fuga' + (v.fugas_quantas ? ' (' + v.fugas_quantas + ')' : '') : '',
+            v.sancao_disciplinar === 'sim' ? 'Sanção disciplinar' + (v.sancoes_quantas ? ' (' + v.sancoes_quantas + ')' : '') + (v.sancao_motivo ? ': ' + v.sancao_motivo : '') : '',
+            v.rebeliao === 'sim' ? 'Rebelião' : ''].filter(Boolean).join('; ');
+        } }],
+    [{ rotulo: 'Atividades Exercidas em Unidade Prisional', chave: 'atividade_laborativa_up', pdf: 'Atividades Exercidas em Unidade Prisional:',
+        de: function (v) { return [comRotulo('Estudo', v.estudou_up), comRotulo('Trabalho', v.atividade_laborativa_up)].filter(Boolean).join('; '); } }],
+    [{ rotulo: 'Perspectivas Pós-Cárcere', chave: 'projetos_futuros', pdf: 'Perspectivas Pós-Cárcere:' }],
+    [{ rotulo: 'Observações', chave: 'observacoes_gerais', pdf: 'Observações:', foraDoQuadro: true }]
+  ]}
+];
+
+// --- Leitura do prontuario preenchido (PDF salvo do Word) ---
+// Heuristica: acha os rotulos do modelo na ordem, secao por secao; o valor de cada campo
+// e o texto ate o rotulo seguinte, e as opcoes valem quando marcadas com (X), [x], ☒...
+// A busca usa uma copia do texto sem acentos e em minusculas, do mesmo tamanho, para os
+// indices valerem no texto original.
+function semAcentoMesmoTamanho(t) {
+  return t.split('').map(function (c) { return c.normalize('NFD').charAt(0).toLowerCase().charAt(0); }).join('');
+}
+function escaparRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function regexDoRotulo(rotulo) {
+  const partes = semAcentoMesmoTamanho(rotulo.trim()).split(/\s+/).map(escaparRegex);
+  return new RegExp(partes.join('\\s*').replace(/(\\\?|:)/g, '\\s*$1'));
+}
+const MARCA_PDF = '(?:[(\\[]\\s*[x✓✔•●■*]\\s*[)\\]]|[☒☑■✓✔])';
+function opcaoMarcada(trechoNorm, rotulo) {
+  const norm = semAcentoMesmoTamanho(rotulo);
+  const completo = new RegExp(MARCA_PDF + '\\s*' + escaparRegex(norm).replace(/\s+/g, '\\s*'));
+  if (completo.test(trechoNorm)) return norm.length;
+  // modelos com outra grafia (ex.: "branco" e "Branca", "casado" e "Casado(a)"): 4 primeiras letras
+  const inicio = norm.replace(/[^a-z0-9]/g, '').slice(0, 4);
+  return inicio.length >= 3 && new RegExp(MARCA_PDF + '\\s*' + escaparRegex(inicio)).test(trechoNorm) ? inicio.length : 0;
+}
+function limparTextoPdf(s) {
+  return s.replace(/_{2,}/g, ' ').replace(/[(\[]\s*[xX✓✔•●■*]?\s*[)\]]/g, ' ').replace(/\s+/g, ' ')
+    .replace(/^[\s:?.\-–—\/]+/, '').replace(/[\s\-–—]+$/, '').replace(/^[\s\/]+$/, '').trim();
+}
+function dataDoPdf(s) {
+  const m = s.match(/(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{4}|\d{2})/);
+  if (!m) return '';
+  let ano = m[3];
+  if (ano.length === 2) ano = (Number(ano) > Number(String(new Date().getFullYear()).slice(2)) ? '19' : '20') + ano;
+  return ano + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+}
+
+// secoes: [{ pdf: titulo da secao, campos: [{ chave, tipo, pdf, opcoes, marcaAntes, simNao }] }]
+function lerCamposDoPdf(t, n, secoes, fim) {
+  const valores = {};
+  let pos = 0;
+  const inicios = secoes.map(function (s) {
+    const m = regexDoRotulo(s.pdf).exec(n.slice(pos));
+    if (!m) return null;
+    const r = { ini: pos + m.index, fim: pos + m.index + m[0].length };
+    pos = r.fim;
+    return r;
+  });
+  secoes.forEach(function (secao, i) {
+    if (!inicios[i]) return;
+    const proxima = inicios.slice(i + 1).find(Boolean);
+    const limite = proxima ? proxima.ini : (fim !== undefined ? fim : t.length);
+    let p = inicios[i].fim;
+    const achados = [];
+    secao.campos.forEach(function (campo) {
+      if (!campo.pdf) return;
+      const m = regexDoRotulo(campo.pdf).exec(n.slice(p, limite));
+      if (!m) return;
+      achados.push({ campo: campo, ini: p + m.index, fim: p + m.index + m[0].length });
+      p = p + m.index + m[0].length;
+    });
+    achados.forEach(function (a, k) {
+      const ate = k + 1 < achados.length ? achados[k + 1].ini : limite;
+      const campo = a.campo;
+      const trecho = t.slice(a.fim, ate);
+      const marcas = n.slice(campo.marcaAntes ? Math.max(k ? achados[k - 1].fim : inicios[i].fim, a.ini - 8) : a.fim, ate);
+      if (campo.tipo === 'radio') {
+        let melhor = null; let tamanho = 0;
+        campo.opcoes.forEach(function (o) { const q = opcaoMarcada(marcas, o.rotulo); if (q > tamanho) { tamanho = q; melhor = o.valor; } });
+        if (melhor) valores[campo.chave] = melhor;
+      } else if (campo.tipo === 'multi') {
+        const lista = campo.opcoes.filter(function (o) { return opcaoMarcada(marcas, o.rotulo); }).map(function (o) { return o.valor; });
+        if (lista.length) valores[campo.chave] = lista;
+      } else if (campo.tipo === 'check') {
+        if (opcaoMarcada(marcas, campo.pdf)) valores[campo.chave] = true;
+      } else if (campo.tipo === 'data') {
+        const d = dataDoPdf(trecho);
+        if (d) valores[campo.chave] = d;
+      } else {
+        let texto = limparTextoPdf(trecho);
+        if (campo.simNao) {
+          const sn = semAcentoMesmoTamanho(texto).match(/^(sim|nao)\b[\s,.;:\-–—]*/);
+          if (sn) { valores[campo.simNao] = sn[1]; texto = texto.slice(sn[0].length).trim(); }
+        }
+        if (texto && campo.chave) valores[campo.chave] = texto;
+      }
+    });
+  });
+  return valores;
+}
+
+// Devolve { modelo, valores, ipen, dataEntrevista, atendimentos } ou null se nao parece um prontuario.
+function extrairDadosProntuario(texto) {
+  let t = texto.normalize('NFC');
+  // cabecalho repetido em cada pagina
+  [/ESTADO DE SANTA CATARINA/g, /SECRETARIA DE ESTADO DE JUSTI[ÇC]A E REINTEGRA[ÇC][ÃA]O SOCIAL/g, /SUPERINTEND[ÊE]NCIA (?:DA )?REGIONAL [A-ZÀ-Ü]+/g,
+    /POL[ÍI]CIA PENAL/g, /PRES[ÍI]DIO REGIONAL DE [A-ZÀ-Ü]+/g].forEach(function (re) { t = t.replace(re, ' '); });
+  if (DADOS.unidade.nome) t = t.replace(new RegExp(escaparRegex(DADOS.unidade.nome.toUpperCase()), 'g'), ' ');
+  t = t.replace(/\s+/g, ' ');
+  const n = semAcentoMesmoTamanho(t);
+  const resumido = /prontuario psicossocial resumido/.test(n);
+  if (!resumido && !/prontuario psicossocial/.test(n)) return null;
+
+  let valores;
+  const atendimentos = [];
+  if (resumido) {
+    const secoes = CTC_PRONTUARIO_RESUMIDO.map(function (s) {
+      const campos = [];
+      s.linhas.forEach(function (linha) {
+        linha.forEach(function (item) {
+          if (!item.pdf) return;
+          const base = item.chave ? CAMPO_DO_PRONTUARIO[item.chave] : null;
+          // itens que resumem varios campos ficam como texto (com simNao, se houver)
+          const tipo = item.de || !base ? 'texto' : base.tipo;
+          campos.push({ chave: item.chave, tipo: tipo, opcoes: base ? base.opcoes : null, pdf: item.pdf, simNao: item.simNao });
+        });
+      });
+      return { pdf: s.pdf, campos: campos };
+    });
+    const marcaTabela = /(?:data\s*)?anotacoes de atendimentos/.exec(n);
+    valores = lerCamposDoPdf(t, n, secoes, marcaTabela ? marcaTabela.index : undefined);
+    if (marcaTabela) {
+      const tabela = t.slice(marcaTabela.index + marcaTabela[0].length);
+      const partes = tabela.split(/(\d{1,2}\s*\/\s*\d{1,2}\s*\/\s*(?:\d{4}|\d{2}))/);
+      for (let i = 1; i < partes.length; i += 2) {
+        const anotacao = limparTextoPdf(partes[i + 1] || '');
+        if (anotacao) atendimentos.push({ data: dataDoPdf(partes[i]), texto: anotacao });
+      }
+    }
+  } else {
+    valores = lerCamposDoPdf(t, n, CTC_PRONTUARIO_DEF.secoes);
+  }
+  const ipen = /ipen\s*:?\s*([\d][\d.\-\/]*)/.exec(n);
+  const data = (resumido ? /data\s*:\s*(\d{1,2}\s*\/\s*\d{1,2}\s*\/\s*\d{2,4})/ : /data da entrevista\s*:\s*(\d{1,2}\s*\/\s*\d{1,2}\s*\/\s*\d{2,4})/).exec(n);
+  return {
+    modelo: resumido ? 'resumido' : 'completo', valores: valores, atendimentos: atendimentos,
+    ipen: ipen ? t.substr(ipen.index + ipen[0].length - ipen[1].length, ipen[1].length) : '',
+    dataEntrevista: data ? dataDoPdf(data[1]) : ''
+  };
+}
+
+// --- Tela do prontuario ---
+function renderizarProntuario(container, pessoa) {
+  const registroAtual = DADOS.prontuarios.find(function (r) { return r.pplId === pessoa.id; }) || null;
+  const idProntuario = registroAtual ? registroAtual.id : pessoa.id;
+  const areaOk = el('div', {});
+  const dataEntrevista = campoTexto('Data da entrevista', { tipo: 'date', valor: registroAtual ? registroAtual.dataEntrevista : '' });
+
+  const campos = {};
+  const fieldsets = CTC_PRONTUARIO_DEF.secoes.map(function (secaoDef) {
+    const grade = el('div', { class: 'grade-prontuario' });
+    secaoDef.campos.forEach(function (campoDef) {
+      const campo = construirCampoFicha(campoDef);
+      if (campoDef.tipo === 'textarea' || campoDef.tipo === 'multi' || (campoDef.tipo === 'radio' && campoDef.opcoes.length > 3)) campo.wrap.classList.add('largura-total');
+      if (registroAtual && registroAtual.valores && registroAtual.valores[campoDef.chave] !== undefined) campo.definirValor(registroAtual.valores[campoDef.chave]);
+      campos[campoDef.chave] = campo;
+      grade.appendChild(campo.wrap);
+    });
+    return el('fieldset', {}, [el('legend', { texto: secaoDef.titulo }), grade]);
+  });
+
+  // Anotacoes de atendimentos (folha de evolucao do modelo resumido)
+  let atendimentos = registroAtual && registroAtual.atendimentos ? registroAtual.atendimentos.slice() : [];
+  const corpoAtendimentos = el('tbody', {});
+  function ordenarAtendimentos() { atendimentos.sort(function (a, b) { return (a.data || '') < (b.data || '') ? -1 : 1; }); }
+  function desenharAtendimentos() {
+    limpar(corpoAtendimentos);
+    if (!atendimentos.length) corpoAtendimentos.appendChild(el('tr', {}, [el('td', { colspan: '3', class: 'texto-ajuda', texto: 'Nenhuma anotação ainda.' })]));
+    atendimentos.forEach(function (a, i) {
+      corpoAtendimentos.appendChild(el('tr', {}, [
+        el('td', { texto: formatarData(a.data) }), el('td', { texto: a.texto }),
+        el('td', {}, [botao('Remover', 'botao-texto', function () { atendimentos.splice(i, 1); desenharAtendimentos(); })])
+      ]));
+    });
+  }
+  const dataNova = campoTexto('Data', { tipo: 'date', valor: hojeISO() });
+  const textoNovo = campoTexto('Anotação do atendimento', { textarea: true });
+  const adicionar = botao('Adicionar anotação', 'botao-secundario', function () {
+    if (!textoNovo.input.value.trim()) return;
+    atendimentos.push({ data: dataNova.input.value || hojeISO(), texto: textoNovo.input.value.trim() });
+    ordenarAtendimentos();
+    textoNovo.input.value = '';
+    desenharAtendimentos();
+  });
+  ordenarAtendimentos();
+  desenharAtendimentos();
+  const fieldsetAtendimentos = el('fieldset', {}, [
+    el('legend', { texto: 'Anotações de atendimentos' }),
+    el('table', { class: 'tabela-atendimentos' }, [el('thead', {}, [el('tr', {}, [el('th', { texto: 'Data' }), el('th', { texto: 'Anotações de atendimentos' }), el('th', { texto: '' })])]), corpoAtendimentos]),
+    el('div', { class: 'grade grade-3' }, [dataNova.wrap]), textoNovo.wrap, adicionar,
+    el('p', { class: 'texto-ajuda', texto: 'As anotações só ficam gravadas ao salvar o prontuário.' })
+  ]);
+
+  function registroDaTela() {
+    const valores = {};
+    Object.keys(campos).forEach(function (chave) { valores[chave] = campos[chave].obterValor(); });
+    return { dataEntrevista: dataEntrevista.input.value, valores: valores, atendimentos: atendimentos.slice() };
+  }
+
+  const leitura = areaLeituraDePdf('Preencher com o prontuário já preenchido',
+    'Escolha ou arraste aqui o Prontuário Psicossocial preenchido (modelo completo ou resumido, em PDF salvo do Word). Os campos abaixo são preenchidos sozinhos.',
+    'o prontuário', function (texto, resultado) {
+      const r = extrairDadosProntuario(texto);
+      if (!r) { resultado.appendChild(mensagemErro('Este arquivo não parece um Prontuário Psicossocial (não achei o título do modelo).')); return; }
+      const chaves = Object.keys(r.valores).filter(function (k) { return campos[k]; });
+      chaves.forEach(function (k) { campos[k].definirValor(r.valores[k]); });
+      if (r.dataEntrevista) dataEntrevista.input.value = r.dataEntrevista;
+      let novas = 0;
+      r.atendimentos.forEach(function (a) {
+        if (atendimentos.some(function (b) { return b.data === a.data && b.texto === a.texto; })) return;
+        atendimentos.push(a); novas += 1;
+      });
+      ordenarAtendimentos();
+      desenharAtendimentos();
+      if (!chaves.length && !novas) {
+        resultado.appendChild(mensagemErro('Achei o modelo ' + r.modelo + ', mas nenhum campo preenchido. O PDF pode ter sido preenchido à mão e escaneado' +
+          (r.modelo === 'resumido' ? ', ou os quadros 1 a 4 estão como imagem no Word (no modelo resumido do PRC estão: só IPEN, data e anotações de atendimento viram texto).' : '.')));
+        return;
+      }
+      resultado.appendChild(mensagemOk('Modelo ' + r.modelo + ': ' + chaves.length + ' campo(s) preenchido(s)' + (novas ? ' e ' + novas + ' anotação(ões) de atendimento' : '') + '. Confira tudo antes de salvar.'));
+      if (r.ipen && pessoa.prontuario && r.ipen.replace(/\D/g, '') !== String(pessoa.prontuario).replace(/\D/g, '')) {
+        resultado.appendChild(mensagemErro('Atenção: o IPEN do arquivo (' + r.ipen + ') é diferente do prontuário desta pessoa (' + pessoa.prontuario + '). Confira se é o arquivo certo.'));
+      }
+    });
+
+  const autoria = el('div', { class: 'autoria', texto: registroAtual ? textoAutoria('prontuarios', registroAtual.id) : '' });
+  let baseAtual = registroAtual;
+  const salvar = botao('Salvar Prontuário Psicossocial', 'botao-primario', async function () {
+    limpar(areaOk);
+    const registro = Object.assign({}, baseAtual || {}, registroDaTela(), { id: idProntuario, pplId: pessoa.id });
+    const ok = await salvarComAviso([{ colecao: 'prontuarios', acao: 'salvou o Prontuário Psicossocial', registro: registro }]);
+    if (!ok) return;
+    baseAtual = copiaParaTela(CACHE.prontuarios.get(idProntuario));
+    autoria.textContent = textoAutoria('prontuarios', idProntuario);
+    areaOk.appendChild(mensagemOk('Prontuário Psicossocial salvo.'));
+  });
+  const impressao = el('div', { class: 'botoes-linha' }, [
+    botao('Imprimir modelo completo', 'botao-secundario', function () { imprimirProntuario(pessoa, registroDaTela(), 'completo'); }),
+    ' ',
+    botao('Imprimir modelo resumido', 'botao-secundario', function () { imprimirProntuario(pessoa, registroDaTela(), 'resumido'); })
+  ]);
+
+  container.appendChild(cartaoRecolhivel('Prontuário Psicossocial', [
+    el('p', { class: 'texto-ajuda', texto: 'Visível só para psicólogo(a) e assistente social da unidade, a SR e o DPP. O que for preenchido aqui pode ser levado às Fichas 1 a 3 pelo botão "Pré-preencher com o Prontuário Psicossocial" de cada ficha.' }),
+    autoria, areaOk, leitura,
+    el('div', { class: 'grade grade-3' }, [dataEntrevista.wrap])
+  ].concat(fieldsets).concat([fieldsetAtendimentos, salvar, ' ', impressao])));
+}
+
+// --- Impressao nos modelos do PRC (abre em nova janela; imprime o que esta na tela) ---
+function imprimirProntuario(pessoa, reg, modelo) {
+  const v = reg.valores || {};
+  const regional = REGIONAIS_SC.find(function (r) { return UNIDADE_ATIVA && r.sigla === UNIDADE_ATIVA.sr; });
+  const nomeRegional = regional ? regional.nome.replace(/^SR\d+\s*-\s*/, '') : '';
+  function marcas(campo, valor) {
+    const lista = Array.isArray(valor) ? valor : [valor];
+    return campo.opcoes.map(function (o) { return '(' + (lista.indexOf(o.valor) !== -1 ? 'X' : '&nbsp;&nbsp;') + ') ' + esc(o.rotulo); }).join('&nbsp;&nbsp; ');
+  }
+  function valorDoCampo(campo, valor) {
+    if (campo.tipo === 'radio' || campo.tipo === 'multi') return marcas(campo, valor);
+    if (campo.tipo === 'data') return valor ? formatarData(valor) : '';
+    if (campo.tipo === 'check') return '';
+    return esc(valor || '').replace(/\n/g, '<br>');
+  }
+  function linhasAtendimentos(minimo) {
+    const linhas = (reg.atendimentos || []).map(function (a) { return '<tr><td>' + formatarData(a.data) + '</td><td>' + esc(a.texto).replace(/\n/g, '<br>') + '</td></tr>'; });
+    while (linhas.length < minimo) linhas.push('<tr><td>&nbsp;</td><td></td></tr>');
+    return '<table class="atend"><thead><tr><th style="width:18%">DATA</th><th>ANOTAÇÕES DE ATENDIMENTOS</th></tr></thead><tbody>' + linhas.join('') + '</tbody></table>';
+  }
+  const cabecalho = '<div class="cab">ESTADO DE SANTA CATARINA<br>SECRETARIA DE ESTADO DE JUSTIÇA E REINTEGRAÇÃO SOCIAL<br>POLÍCIA PENAL<br>' +
+    esc(nomeRegional.toUpperCase()) + '<br>' + esc((DADOS.unidade.nome || '').toUpperCase()) + '</div>';
+  const dataEnt = reg.dataEntrevista ? formatarData(reg.dataEntrevista) : '';
+  let corpo;
+  if (modelo === 'completo') {
+    corpo = '<div class="titulo">PRONTUÁRIO PSICOSSOCIAL</div>' +
+      '<div class="topo"><span><b>IPEN:</b> ' + esc(pessoa.prontuario || '') + '</span><span><b>Data da Entrevista:</b> ' + dataEnt + '</span></div>' +
+      '<div class="c"><b>Nome:</b> ' + esc(pessoa.nome || '') + (pessoa.nomeSocial ? ' (nome social: ' + esc(pessoa.nomeSocial) + ')' : '') + '</div>' +
+      CTC_PRONTUARIO_DEF.secoes.map(function (s) {
+        return '<h2>' + esc(s.titulo.toUpperCase()) + '</h2><div class="grade">' + s.campos.filter(function (c) { return !c.soResumido; }).map(function (c) {
+          const largo = c.tipo === 'textarea' || c.tipo === 'multi' || (c.tipo === 'radio' && c.opcoes.length > 3);
+          if (c.tipo === 'check') return '<div class="c">(' + (v[c.chave] ? 'X' : '&nbsp;&nbsp;') + ') ' + esc(c.rotulo) + '</div>';
+          return '<div class="c' + (largo ? ' largo' : '') + '"><b>' + esc(c.rotulo) + ':</b> ' + valorDoCampo(c, v[c.chave]) + '</div>';
+        }).join('') + '</div>';
+      }).join('') +
+      ((reg.atendimentos || []).length ? '<h2>ANOTAÇÕES DE ATENDIMENTOS</h2>' + linhasAtendimentos(0) : '');
+  } else {
+    let observacoes = '';
+    corpo = '<div class="titulo">Prontuário Psicossocial Resumido</div>' +
+      '<div class="topo"><span><b>IPEN:</b> ' + esc(pessoa.prontuario || '') + '</span><span><b>Data:</b> ' + dataEnt + '</span></div>' +
+      CTC_PRONTUARIO_RESUMIDO.map(function (s) {
+        return '<div class="quadro"><div class="linha"><b>' + esc(s.titulo) + '</b></div>' + s.linhas.map(function (linha) {
+          return '<div class="linha">' + linha.map(function (item) {
+            const campo = item.chave ? CAMPO_DO_PRONTUARIO[item.chave] : null;
+            const valor = item.de ? esc(item.de(v, pessoa) || '') : (campo ? valorDoCampo(campo, v[item.chave]) : '');
+            const html = '<span>' + esc(item.rotulo) + ': ' + valor + '</span>';
+            if (item.foraDoQuadro) { observacoes = '<div class="c">' + esc(item.rotulo) + ': ' + valor + '</div>'; return ''; }
+            return html;
+          }).join('') + '</div>';
+        }).join('') + '</div>';
+      }).join('') + observacoes +
+      '<div class="quebra"></div>' + cabecalho + linhasAtendimentos(40);
+  }
+  const janela = window.open('', '_blank');
+  janela.document.write(
+    '<html><head><meta charset="UTF-8"><title>Prontuário Psicossocial' + (modelo === 'resumido' ? ' Resumido' : '') + ' - ' + esc(pessoa.nomeSocial || pessoa.nome) + '</title>' +
+    '<style>body{font-family:Arial,sans-serif;font-size:10.5pt;color:#000;margin:1.5cm} .cab{font-family:"Times New Roman",serif;font-size:10pt;margin-bottom:0.6cm}' +
+    ' .titulo{background:#e0e0e0;text-align:center;font-size:14pt;padding:3px;margin-bottom:4px;font-weight:' + (modelo === 'completo' ? 'bold' : 'normal') + '}' +
+    ' .topo{display:flex;justify-content:space-between;margin:6px 0 10px} h2{font-size:10.5pt;margin:12px 0 4px}' +
+    ' .grade{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px} .c{padding:1px 0;border-bottom:1px solid #999} .largo{grid-column:1/-1}' +
+    ' .quadro{border:1.5px solid #000;padding:2px 6px;margin-bottom:-1.5px} .linha{display:flex;flex-wrap:wrap;gap:4px 26px;padding:2px 0} .linha span{flex:1 1 auto}' +
+    ' .quebra{page-break-after:always} table.atend{width:100%;border-collapse:collapse} .atend th,.atend td{border:1px solid #000;padding:2px 4px;text-align:left;vertical-align:top;height:1.1em}' +
+    ' .atend th{text-align:center;text-decoration:underline}</style>' +
+    '</head><body>' + cabecalho + corpo + '</body></html>'
+  );
+  janela.document.close();
+  janela.focus();
+  janela.print();
+}
+
+// --- Fichas 1-3 a partir do prontuario ---
+// So sugere o que o prontuario registra de forma direta; marcacoes que pedem juizo
+// tecnico (ex.: "uso problematico", "transtorno mental") nunca sao marcadas sozinhas.
+const SUGESTOES_DO_PRONTUARIO = {
+  servico_social: function (v) {
+    const vinculos = juntarLinhas([comRotulo('Mora com', v.mora_com), comRotulo('Criado por', v.criado_por),
+      comRotulo('Companheira(o)', [v.companheiro_nome, v.tempo_juntos ? 'juntos há ' + v.tempo_juntos : ''].filter(Boolean).join(', ')),
+      comRotulo('Pai', v.pai), comRotulo('Mãe', v.mae), comRotulo('Relações na família', v.relacoes_familia)]);
+    return {
+      nacionalidade: v.nacionalidade,
+      estado_civil: rotuloDaOpcao('estado_civil', v.estado_civil),
+      filhos_dependentes: v.possui_filhos === 'sim' ? [v.num_filhos || 'Sim', comRotulo('estão com', v.filhos_com_quem)].filter(Boolean).join(' — ') : (v.possui_filhos === 'nao' ? 'Não possui' : ''),
+      principais_vinculos_familiares_comunitarios: vinculos,
+      situacao_visitas: v.recebe_visitas === 'sim' ? 'recebe_visitas' : (v.recebe_visitas === 'nao' ? 'nao_recebe_visitas' : ''),
+      frequencia_visitas: [v.visitas_quem, v.visitas_frequencia].filter(Boolean).join(' — '),
+      exposicao_violencia_vulnerabilidade: juntarLinhas([
+        v.violencia_infancia === 'sim' ? 'Violência na infância' + (v.violencia_infancia_tipo ? ': ' + v.violencia_infancia_tipo : '') : '',
+        v.ferido_arma === 'sim' ? 'Já foi ferido por arma' + (v.ferido_arma_qual ? ': ' + v.ferido_arma_qual : '') + (v.ferido_arma_motivo ? ' (' + v.ferido_arma_motivo + ')' : '') : '',
+        comRotulo('Histórico de violência', v.historico_violencia)])
+    };
+  },
+  psicologia: function (v) {
+    return {
+      adaptacao_contexto_institucional: comRotulo('Problema de relacionamento no sistema prisional', v.problema_relacionamento),
+      rede_afetiva_relacional_referida: juntarLinhas([comRotulo('Mora com', v.mora_com), comRotulo('Companheira(o)', v.companheiro_nome),
+        comRotulo('Relações na família', v.relacoes_familia), comRotulo('Visitas', [v.visitas_quem, v.visitas_frequencia].filter(Boolean).join(' — '))]),
+      situacoes_sofrimento_psiquico_relevantes: juntarLinhas([comRotulo('Sintomas atuais', v.sintomas),
+        v.pensamentos_morte === 'sim' ? 'Refere pensamentos de morte' : '',
+        v.tentativa_suicidio === 'sim' ? 'Tentativa de suicídio' + (v.tentativa_suicidio_quando ? ' (' + v.tentativa_suicidio_quando + ')' : '') : '',
+        v.acompanhamento_psi === 'sim' ? 'Acompanhamento psicológico/psiquiátrico anterior' + [v.acompanhamento_psi_quando, v.acompanhamento_psi_motivo].filter(Boolean).map(function (x) { return ' — ' + x; }).join('') : '']),
+      ideacao_suicida: v.pensamentos_morte === 'sim',
+      historico_tentativa_suicidio: v.tentativa_suicidio === 'sim',
+      interesses_declarados: juntarLinhas([comRotulo('Interesse em atividades nesta UP', rotuloDaOpcao('interesse_atividades', v.interesse_atividades)),
+        comRotulo('Interesse em continuar os estudos', rotuloDaOpcao('interesse_continuar', v.interesse_continuar)), comRotulo('Projetos futuros', v.projetos_futuros)])
+    };
+  },
+  saude: function (v) {
+    return {
+      uso_continuo_medicamentos: v.usa_medicamentos === 'sim',
+      descricao_condicao_relevante: juntarLinhas([comRotulo('Medicamentos', v.medicamentos),
+        comRotulo('Doenças', [v.doencas, v.doencas_quando].filter(Boolean).join(' — ')), comRotulo('Tratamento', v.fez_tratamento),
+        v.internacao === 'sim' ? 'Internação' + [v.internacao_quando, v.internacao_motivo].filter(Boolean).map(function (x) { return ' — ' + x; }).join('') : '',
+        comRotulo('Sintomas atuais', v.sintomas),
+        comRotulo('Doenças hereditárias na família', rotuloDaOpcao('doencas_hereditarias', v.doencas_hereditarias)),
+        v.padrao_sono === 'irregular' ? 'Padrão de sono irregular' : '', v.alimentacao === 'irregular' ? 'Alimentação irregular' : '',
+        v.usava_substancias === 'sim' ? 'Uso de substâncias antes da prisão: ' + [rotuloDaOpcao('substancias', v.substancias), v.substancias_outras].filter(Boolean).join(', ') +
+          (v.idade_inicio_uso ? '; início: ' + v.idade_inicio_uso : '') + (v.frequencia_uso ? '; frequência: ' + v.frequencia_uso : '') : '',
+        v.usou_apos_prisao === 'sim' ? 'Continuou/voltou a usar depois de preso' : '',
+        v.quer_ajuda_parar === 'sim' ? 'Gostaria de receber ajuda para parar de usar' : ''])
+    };
+  }
+};
 
 
 // ---------------------------------------------------------------------
@@ -2493,12 +3240,15 @@ function aoMudarDados(deOutraPessoa, primeiraCarga) {
 }
 
 function escutarFichas() {
-  if (ESCUTA_FICHAS) ESCUTA_FICHAS();
-  ESCUTA_FICHAS = null;
-  CACHE.fichas.clear();
-  if (!UNIDADE_ATIVA) { COLECOES_CARREGADAS.add('fichas'); return; }
-  COLECOES_CARREGADAS.delete('fichas');
-  ESCUTA_FICHAS = escutar('fichas', [where('unidade', '==', UNIDADE_ATIVA.nome), where('sr', '==', UNIDADE_ATIVA.sr)]);
+  ESCUTAS_DA_UNIDADE.forEach(function (cancelar) { cancelar(); });
+  ESCUTAS_DA_UNIDADE = [];
+  COLECOES_DA_UNIDADE.forEach(function (c) {
+    CACHE[c].clear();
+    const permitido = c !== 'prontuarios' || podeUsarProntuario();
+    if (!UNIDADE_ATIVA || !permitido) { COLECOES_CARREGADAS.add(c); return; }
+    COLECOES_CARREGADAS.delete(c);
+    ESCUTAS_DA_UNIDADE.push(escutar(c, [where('unidade', '==', UNIDADE_ATIVA.nome), where('sr', '==', UNIDADE_ATIVA.sr)]));
+  });
 }
 
 function escutarContas() {
@@ -2514,7 +3264,8 @@ function escutarContas() {
 function pararEscutas() {
   ESCUTAS.forEach(function (cancelar) { cancelar(); });
   ESCUTAS = [];
-  if (ESCUTA_FICHAS) { ESCUTA_FICHAS(); ESCUTA_FICHAS = null; }
+  ESCUTAS_DA_UNIDADE.forEach(function (cancelar) { cancelar(); });
+  ESCUTAS_DA_UNIDADE = [];
   COLECOES.forEach(function (c) { CACHE[c].clear(); });
   CONTAS.clear();
   COLECOES_CARREGADAS = new Set();
@@ -2531,7 +3282,7 @@ function iniciarSessao() {
   if (PERFIL.status !== 'ATIVO') { mostrarAguardando(); return; }
   if (PERFIL.perfil === 'MEMBRO' || PERFIL.perfil === 'DIR') UNIDADE_ATIVA = { nome: PERFIL.unidade, sr: PERFIL.sr };
   const filtros = filtrosDoAlcance();
-  COLECOES.filter(function (c) { return c !== 'fichas'; }).forEach(function (c) { ESCUTAS.push(escutar(c, filtros)); });
+  COLECOES.filter(function (c) { return COLECOES_DA_UNIDADE.indexOf(c) === -1; }).forEach(function (c) { ESCUTAS.push(escutar(c, filtros)); });
   escutarFichas();
   escutarContas();
   mostrarApp();

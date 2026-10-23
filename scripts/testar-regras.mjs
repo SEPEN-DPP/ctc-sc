@@ -154,6 +154,18 @@ await caso('ficha não pode trocar de tipo', recusa(gravar('psiA', [{ col: 'fich
 await caso('SR grava qualquer ficha da regional', aceita(gravar('sr1', [{ col: 'fichas', id: 'p1_saude', dados: { pplId: 'p1', tipo: 'saude' } }])));
 await caso('diretor(a) lê a ficha da unidade', aceita(getDoc(doc(bd('dirA'), 'fichas', 'p1_psicologia'))));
 
+console.log('\nProntuário psicossocial (só psicologia, serviço social, SR e DPP)');
+await caso('psicóloga grava o prontuário', aceita(gravar('psiA', [{ col: 'prontuarios', id: 'p1', dados: { pplId: 'p1', valores: { a: 1 }, atendimentos: [] } }])));
+await caso('assistente social atualiza o prontuário', aceita(gravar('socA', [{ col: 'prontuarios', id: 'p1', dados: { pplId: 'p1', valores: { a: 2 } }, rev: 2 }])));
+await caso('psicóloga lê o prontuário', aceita(getDoc(doc(bd('psiA'), 'prontuarios', 'p1'))));
+await caso('psicóloga consulta os prontuários da unidade', aceita(getDocs(query(collection(bd('psiA'), 'prontuarios'), where('unidade', '==', A.unidade), where('sr', '==', A.sr)))));
+await caso('chefe de serviço não lê o prontuário', recusa(getDoc(doc(bd('chefeA'), 'prontuarios', 'p1'))));
+await caso('diretor(a) não lê o prontuário', recusa(getDoc(doc(bd('dirA'), 'prontuarios', 'p1'))));
+await caso('diretor(a) não lê o histórico do prontuário', recusa(getDoc(doc(bd('dirA'), 'prontuarios', 'p1', 'historico', '1'))));
+await caso('chefe de serviço não grava prontuário', recusa(gravar('chefeA', [{ col: 'prontuarios', id: 'p5', dados: { pplId: 'p5' } }])));
+await caso('psicóloga de outra unidade não lê o prontuário', recusa(getDoc(doc(bd('psiB'), 'prontuarios', 'p1'))));
+await caso('SR lê o prontuário da regional', aceita(getDoc(doc(bd('sr1'), 'prontuarios', 'p1'))));
+
 console.log('\nPIP, reclassificação, unidade e composição da CTC');
 await caso('membro registra PIP + reclassificação + conclui fase (lote de 3)', aceita(gravar('chefeA', [
   { col: 'pips', id: 'pip1', dados: { pplId: 'p5' } },
