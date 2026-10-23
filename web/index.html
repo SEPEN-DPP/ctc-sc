@@ -2632,11 +2632,8 @@ function renderizarPip(container, pessoa) {
   });
   const fieldsetParticipantes = el('fieldset', {}, [el('legend', { texto: '6. Participantes' }), el('div', { class: 'grade grade-3' }, camposParticipantesEl)]);
 
-  const form = el('form', {
-    onSubmit: async function (ev) {
-      ev.preventDefault();
-      limpar(areaErro);
-
+  // O PIP como esta na tela (usado ao registrar e ao imprimir antes de registrar)
+  function pipDaTela() {
       const deliberacao = {};
       Object.keys(camposDeliberacao).forEach(function (chave) { deliberacao[chave] = camposDeliberacao[chave].checked; });
       deliberacao.observacoes = deliberacaoObservacoes.input.value;
@@ -2665,6 +2662,14 @@ function renderizarPip(container, pessoa) {
         deliberacao: deliberacao,
         participantes: participantes
       };
+      return pip;
+  }
+
+  const form = el('form', {
+    onSubmit: async function (ev) {
+      ev.preventDefault();
+      limpar(areaErro);
+      const pip = pipDaTela();
       const faseAberta = DADOS.fases.find(function (f) { return f.pplId === pessoa.id && f.fase === 'classificacao_singularizacao' && !f.dataConclusao; });
       const ok = await salvarComAviso([
         { colecao: 'pips', acao: 'registrou Ficha 5 / PIP', registro: pip },
@@ -2681,7 +2686,9 @@ function renderizarPip(container, pessoa) {
   }, [
     areaErro, botaoAutoPreencher,
     fieldsetSintese, fieldsetPrioridades, fieldsetPip, fieldsetAlocacao, fieldsetDeliberacao, fieldsetParticipantes,
-    el('button', { class: 'botao botao-sucesso', type: 'submit', texto: 'Registrar Ficha 5 e agendar reclassificação' })
+    el('button', { class: 'botao botao-sucesso', type: 'submit', texto: 'Registrar Ficha 5 e agendar reclassificação' }),
+    ' ',
+    botao('Gerar PIP para imprimir', 'botao-secundario', function () { imprimirPip(pessoa, pipDaTela(), { rascunho: true }); })
   ]);
 
   function recarregarHistorico() {
@@ -2713,32 +2720,75 @@ function esc(valor) {
   return String(valor).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function imprimirPip(pessoa, pip) {
-  const janela = window.open('', '_blank');
+// Impressao da Ficha 5 no formato do exemplo (exemplos/pip-exemplo.html). Com
+// opcoes.rascunho (botao do formulario, antes de registrar) abre sem imprimir e avisa
+// que ainda nao foi registrado.
+function imprimirPip(pessoa, pip, opcoes) {
+  const op = opcoes || {};
+  const marcas = function (lista, marcado) {
+    return lista.map(function (o) { return '<span>(' + (marcado(o) ? 'X' : '&nbsp;&nbsp;') + ') ' + esc(o.rotulo) + '</span>'; }).join('');
+  };
+  const prioridade = function (valor) { return marcas(CTC_PRIORIDADES, function (o) { return o.valor === valor; }); };
+  const aloc = pip.alocacaoConvivencia || {};
+  const delib = pip.deliberacao || {};
+  const part = pip.participantes || {};
+  const regional = REGIONAIS_SC.find(function (r) { return UNIDADE_ATIVA && r.sigla === UNIDADE_ATIVA.sr; });
+  const nomeRegional = regional ? regional.nome.replace(/^SR\d+\s*-\s*/, '') : '';
+  const tipoPrisao = { definitiva: 'definitiva', provisoria: 'provisória' }[pessoa.tipoPrisao] || '';
+  const ident = [
+    ['Pessoa', (pessoa.nome || '') + (pessoa.nomeSocial ? ' (nome social: ' + pessoa.nomeSocial + ')' : '')],
+    ['Prontuário (IPEN)', pessoa.prontuario || '—'],
+    ['Regime / tipo de prisão', [pessoa.regime, tipoPrisao].filter(Boolean).join(' — ') || '—'],
+    ['Ingresso na unidade', formatarData(pessoa.dataIngresso)],
+    ['Elaborado em', formatarData(pip.elaboradoEm)]
+  ];
   const linhasTabela = (pip.pipTabela || []).map(function (l) {
     return '<tr><td>' + esc(l.area) + '</td><td>' + esc(l.necessidadeObjetivo || '—') + '</td><td>' + esc(l.acao || '—') + '</td><td>' + esc(l.responsavel || '—') + '</td><td>' + esc(l.prazo || '—') + '</td></tr>';
   }).join('');
+  const assinaturas = CTC_FICHA5_PARTICIPANTES_CAMPOS.filter(function (c) { return c.chave !== 'outros' || part.outros; }).map(function (c) {
+    return '<div>' + (part[c.chave] ? esc(part[c.chave]) + '<br>' : '') + esc(c.rotulo) + '</div>';
+  }).join('');
+  const hoje = new Date((pip.elaboradoEm || hojeISO()) + 'T12:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const quebraLinha = function (s) { return esc(s || '—').replace(/\n/g, '<br>'); };
+
+  const janela = window.open('', '_blank');
   janela.document.write(
     '<html><head><meta charset="UTF-8"><title>Ficha 5 - PIP - ' + esc(pessoa.nomeSocial || pessoa.nome) + '</title>' +
-    '<style>body{font-family:Arial,sans-serif;padding:2rem;color:#333} h1{font-size:1.2rem} h2{font-size:1rem;margin-top:1.5rem} .rotulo{font-weight:bold} table{width:100%;border-collapse:collapse;font-size:0.85rem} td,th{border:1px solid #ccc;padding:0.3rem;text-align:left}</style>' +
+    '<style>@page{size:A4;margin:2cm 2cm 2cm 2.5cm} body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.45;color:#000;background:#fff;max-width:17cm;margin:1.5cm auto;padding:0 16px}' +
+    ' .aviso{background:#fff7d6;border:1px solid #e0c060;padding:6px 10px;font-size:9.5pt;margin-bottom:18px}' +
+    ' .cab{font-family:"Times New Roman",serif;font-size:10pt;margin-bottom:18px} h1{background:#e0e0e0;text-align:center;font-size:13pt;padding:4px;margin:0 0 12px}' +
+    ' h2{font-size:11pt;text-transform:uppercase;border-bottom:1px solid #000;margin:18px 0 6px;padding-bottom:2px}' +
+    ' table{width:100%;border-collapse:collapse;font-size:10pt} td,th{border:1px solid #000;padding:3px 6px;text-align:left;vertical-align:top} th{background:#f0f0f0;font-weight:600}' +
+    ' .ident th{width:30%} .sintese th{width:34%} .pip th:nth-child(1){width:15%} .pip th:nth-child(4){width:17%} .pip th:nth-child(5){width:12%}' +
+    ' p{margin:0 0 8px;text-align:justify} .marcas span{display:inline-block;margin-right:18px} .nota{font-size:9pt;color:#333;font-style:italic}' +
+    ' .assinaturas{display:grid;grid-template-columns:1fr 1fr;gap:42px 40px;margin-top:46px} .assinaturas div{border-top:1px solid #000;text-align:center;padding-top:4px;font-size:10pt}' +
+    ' .local{margin-top:28px;text-align:right} @media print{.aviso{display:none} body{margin:0;padding:0;max-width:none}}</style>' +
     '</head><body>' +
-    '<h1>Ficha 5 — Síntese Colegiada e Programa Individualizador da Pena (PIP)</h1>' +
-    '<p><span class="rotulo">Unidade:</span> ' + esc(DADOS.unidade.nome || '—') + '</p>' +
-    '<p><span class="rotulo">Pessoa:</span> ' + esc(pessoa.nomeSocial || pessoa.nome) + ' — Prontuário: ' + esc(pessoa.prontuario || '—') + '</p>' +
-    '<p><span class="rotulo">Elaborado em:</span> ' + formatarData(pip.elaboradoEm) + '</p>' +
-    '<h2>1. Síntese interdisciplinar</h2>' +
-    CTC_FICHA5_SINTESE_CAMPOS.map(function (c) { return '<p><span class="rotulo">' + c.rotulo + ':</span> ' + esc(pip[c.chave] || '—') + '</p>'; }).join('') +
-    '<h2>2. Prioridades</h2><p>Educação: ' + esc(pip.prioridadeEducacao || '—') + ' · Saúde física/mental: ' + esc(pip.prioridadeSaude || '—') + ' · Social/jurídica: ' + esc(pip.prioridadeSocialJuridica || '—') + '</p>' +
-    '<h2>3. Programa Individualizador da Pena – PIP</h2><table><thead><tr><th>Área</th><th>Necessidade/objetivo</th><th>Ação</th><th>Responsável</th><th>Prazo</th></tr></thead><tbody>' + linhasTabela + '</tbody></table>' +
-    '<h2>4. Alocação e convivência</h2><p>' + esc((pip.alocacaoConvivencia || {}).alocacao || '—') + ' — ' + esc((pip.alocacaoConvivencia || {}).fundamentacao || '') + '</p>' +
-    '<h2>5. Deliberação</h2><p>PIP aprovado: ' + (pip.aprovadoPelaCtc ? 'Sim' : 'Não') + ' — ' + esc((pip.deliberacao || {}).observacoes || '') + '</p>' +
-    '<p><span class="rotulo">Reclassificação prevista:</span> ' + formatarData(pip.dataPrevistaReclassificacao) + '</p>' +
-    '<hr><p style="font-size:0.75rem;color:#666">Base legal: Lei nº 7.210/1984 (arts. 5º a 9º); Nota Técnica nº 1/2026/GT-CTC/GABSEC/SENAPPEN/MJ; instrumento CTC SC (2026).</p>' +
+    (op.rascunho ? '<div class="aviso"><b>Prévia do que está na tela: esta Ficha 5 ainda não foi registrada.</b> Para imprimir ou salvar em PDF, use Ctrl+P. Depois registre a Ficha 5 no site.</div>' : '') +
+    '<div class="cab">ESTADO DE SANTA CATARINA<br>SECRETARIA DE ESTADO DE JUSTIÇA E REINTEGRAÇÃO SOCIAL<br>POLÍCIA PENAL<br>' +
+      esc(nomeRegional.toUpperCase()) + '<br>' + esc((DADOS.unidade.nome || '').toUpperCase()) + '</div>' +
+    '<h1>FICHA 5 — SÍNTESE COLEGIADA E PROGRAMA INDIVIDUALIZADOR DA PENA (PIP)</h1>' +
+    '<table class="ident">' + ident.map(function (l) { return '<tr><th>' + esc(l[0]) + '</th><td>' + esc(l[1]) + '</td></tr>'; }).join('') + '</table>' +
+    '<h2>1. Síntese interdisciplinar</h2><table class="sintese">' +
+      CTC_FICHA5_SINTESE_CAMPOS.map(function (c) { return '<tr><th>' + esc(c.rotulo) + '</th><td>' + quebraLinha(pip[c.chave]) + '</td></tr>'; }).join('') + '</table>' +
+    '<h2>2. Prioridades</h2><table>' +
+      '<tr><th style="width:34%">Educação</th><td class="marcas">' + prioridade(pip.prioridadeEducacao) + '</td></tr>' +
+      '<tr><th>Saúde física/mental</th><td class="marcas">' + prioridade(pip.prioridadeSaude) + '</td></tr>' +
+      '<tr><th>Social/jurídica</th><td class="marcas">' + prioridade(pip.prioridadeSocialJuridica) + '</td></tr></table>' +
+    '<h2>3. Programa Individualizador da Pena – PIP</h2><table class="pip"><tr><th>Área</th><th>Necessidade/objetivo</th><th>Ação</th><th>Responsável</th><th>Prazo</th></tr>' + linhasTabela + '</table>' +
+    '<h2>4. Alocação e convivência</h2><p class="marcas">' + marcas(CTC_FICHA5_ALOCACAO_OPCOES, function (o) { return o.valor === aloc.alocacao; }) + '</p>' +
+      '<p><strong>Fundamentação objetiva:</strong> ' + quebraLinha(aloc.fundamentacao) + '</p>' +
+    '<h2>5. Deliberação</h2><p class="marcas">' + marcas(CTC_FICHA5_DELIBERACAO_OPCOES, function (o) { return !!delib[o.chave]; }) + '</p>' +
+      (delib.observacoes ? '<p><strong>Observações:</strong> ' + quebraLinha(delib.observacoes) + '</p>' : '') +
+      '<p><strong>Reclassificação prevista:</strong> ' + formatarData(pip.dataPrevistaReclassificacao) + ' (até 12 meses, item 4.4.2.2.4 da Nota Técnica; a data pode ser ajustada na Ficha 6).</p>' +
+    '<h2>6. Participantes</h2><div class="assinaturas">' + assinaturas + '</div>' +
+    '<p class="local">____________________, ' + esc(hoje) + '.</p>' +
+    '<p class="nota" style="margin-top:24px">Base legal: Lei nº 7.210/1984 (arts. 5º a 9º); Nota Técnica nº 1/2026/GT-CTC/GABSEC/SENAPPEN/MJ; instrumento CTC SC (2026).</p>' +
     '</body></html>'
   );
   janela.document.close();
   janela.focus();
-  janela.print();
+  if (!op.rascunho) janela.print();
 }
 
 // ---------------------------------------------------------------------
