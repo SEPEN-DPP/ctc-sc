@@ -1997,7 +1997,9 @@ function extrairDadosProntuario(texto) {
   t = t.replace(/\s+/g, ' ');
   const n = semAcentoMesmoTamanho(t);
   const resumido = /prontuario psicossocial resumido/.test(n);
-  if (!resumido && !/prontuario psicossocial/.test(n)) return null;
+  // relatorio e PIP citam o prontuario, mas nao tem os rotulos do formulario
+  if (!resumido && /relatorio psicossocial|programa individualizador/.test(n) && !/data da entrevista\s*:/.test(n)) return { outroDocumento: true };
+  if (!resumido && !(/prontuario psicossocial/.test(n) && /data da entrevista\s*:/.test(n))) return null;
 
   let valores;
   const atendimentos = [];
@@ -2099,6 +2101,10 @@ function renderizarProntuario(container, pessoa) {
     'Escolha ou arraste aqui o Prontuário Psicossocial preenchido (modelo completo ou resumido, em PDF salvo do Word). Os campos abaixo são preenchidos sozinhos.',
     'o prontuário', function (texto, resultado) {
       const r = extrairDadosProntuario(texto);
+      if (r && r.outroDocumento) {
+        resultado.appendChild(mensagemErro('Este PDF é um Relatório Psicossocial ou um PIP, não o prontuário. Este quadro só lê o Prontuário Psicossocial preenchido. Para salvar o relatório em PDF, use "Gerar relatório" e, na página que abrir, Ctrl+P → "Salvar como PDF".'));
+        return;
+      }
       if (!r) { resultado.appendChild(mensagemErro('Este arquivo não parece um Prontuário Psicossocial (não achei o título do modelo).')); return; }
       const chaves = Object.keys(r.valores).filter(function (k) { return campos[k]; });
       chaves.forEach(function (k) { campos[k].definirValor(r.valores[k]); });
